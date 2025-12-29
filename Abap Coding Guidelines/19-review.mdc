@@ -1,0 +1,126 @@
+---
+description: Code Review Behavior and Standards
+globs: ["*.abap", "*.prog.abap", "*.clas.abap", "*.intf.abap", "*.fugr.abap"]
+alwaysApply: false
+priority: 19
+---
+
+# Review Behavior
+
+## Style Enforcement
+
+- **Enforce naming:** Yes
+- **Enforce documentation headers:** Yes
+- **Enforce SY-SUBRC checks:** Yes
+
+## Reject If
+
+- Forbidden patterns detected
+- Missing authorization check
+- Missing error handling
+- Performance antipattern detected
+
+## Review Checklist
+
+### Code Quality
+
+- [ ] OOP approach used (classes/methods, not forms)
+- [ ] Naming conventions followed (Z/Y prefix, lv_/lt_/lo_ etc.)
+- [ ] No 7.40+ syntax (no inline declarations, no @host variables)
+- [ ] All variables declared upfront (not inline)
+- [ ] No SELECT * or SELECT SINGLE *
+- [ ] No SELECT inside loops (use FOR ALL ENTRIES)
+- [ ] No nested loops (use parallel cursors)
+- [ ] SY-SUBRC checked after READ TABLE, SELECT, CALL FUNCTION
+- [ ] Authorization checks present
+- [ ] Exception handling with TRY-CATCH
+- [ ] No hard-coded texts (use text elements)
+- [ ] No hard-coded master data (use constants)
+- [ ] No direct UPDATE/DELETE on standard tables (use BAPIs)
+- [ ] Physical deletes avoided on Z/Y tables (use deletion flag)
+- [ ] Documentation headers present
+- [ ] ABAP Doc for public methods
+- [ ] No breakpoints before transport
+- [ ] Code Inspector (SCI) clean
+- [ ] Extended Program Check (SLIN) clean
+- [ ] UI guidelines followed (selection screen, ALV)
+- [ ] Memory freed after use (FREE MEMORY ID)
+- [ ] Performance optimized (indexes, no nested selects)
+
+### Security Review
+
+- [ ] Authorization checks implemented
+- [ ] Input validation present
+- [ ] No hard-coded credentials
+- [ ] No SQL injection risks
+- [ ] Proper error handling (no sensitive data in messages)
+
+### Performance Review
+
+- [ ] No SELECT in loops
+- [ ] Proper index usage
+- [ ] FOR ALL ENTRIES with NOT INITIAL check
+- [ ] Binary search after SORT
+- [ ] No nested loops
+- [ ] Package processing for large datasets
+- [ ] Memory management (FREE after use)
+
+### Documentation Review
+
+- [ ] Program header complete
+- [ ] Class header complete
+- [ ] Method documentation (ABAP Doc)
+- [ ] Inline comments for complex logic
+- [ ] IMPORT/EXPORT memory documented
+
+## Common Rejection Reasons
+
+### Syntax Issues
+- Using 7.40+ syntax in NW 7.31 environment
+- Inline declarations
+- Constructor operators
+- Table expressions
+
+### Performance Issues
+- SELECT in loops
+- Nested loops
+- Missing indexes
+- Full table scans
+
+### Security Issues
+- Missing authorization checks
+- Hard-coded values
+- No input validation
+
+### Code Quality Issues
+- Missing SY-SUBRC checks
+- No error handling
+- Missing documentation
+- Dead code present
+
+## Review Process
+
+1. **Initial Review**
+   - Check naming conventions
+   - Verify syntax compatibility
+   - Check basic structure
+
+2. **Detailed Review**
+   - Performance analysis
+   - Security verification
+   - Code quality assessment
+
+3. **Final Review**
+   - Documentation completeness
+   - Test coverage
+   - Transport readiness
+
+## Approval Criteria
+
+Code can be approved when:
+- ✅ All checklist items pass
+- ✅ Code Inspector clean
+- ✅ Extended Check clean
+- ✅ Performance acceptable
+- ✅ Security verified
+- ✅ Documentation complete

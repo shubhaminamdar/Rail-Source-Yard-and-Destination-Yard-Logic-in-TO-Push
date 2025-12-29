@@ -1,0 +1,121 @@
+---
+description: Package and Transport Management Rules
+globs: ["*.abap", "*.prog.abap", "*.clas.abap", "*.intf.abap", "*.fugr.abap"]
+alwaysApply: false
+priority: 14
+---
+
+# Package & Transport Management
+
+## Package Naming
+
+- **Custom packages:** Z* or Y*
+- **Structure:** Logical grouping by module/functionality
+- **Avoid generic names:** Yes
+
+**Examples:**
+- `Z_MATERIAL_MGMT`
+- `Z_SALES_PROCESSING`
+- `Y_FINANCE_REPORTS`
+
+## Transport Rules
+
+- **One object per transport:** No
+- **Related objects together:** Yes
+- **Transport description:** Mandatory
+- **Testing before release:** Mandatory
+- **Peer review required:** Yes
+
+## Development Class
+
+- **Use custom dev class:** Yes
+- **Avoid $TMP:** Yes
+- **Avoid LOCAL:** Only for testing, never transport
+- **Rationale:** TMP and $TMP objects cannot be transported
+
+### Forbidden Development Classes
+
+```abap
+" ❌ FORBIDDEN - Cannot be transported
+$TMP
+LOCAL  " Only for testing
+```
+
+### Correct Development Classes
+
+```abap
+" ✅ CORRECT - Can be transported
+Z_MATERIAL
+Y_SALES
+```
+
+## Transport Description
+
+### Format
+- Clear description of changes
+- Include ticket number (recommended)
+- Include affected objects
+
+### Examples
+
+```
+TICKET-12345: Add validation for company code in material master
+
+TICKET-12346: Fix performance issue in material report
+- Optimized SELECT statements
+- Added indexes
+- Removed nested loops
+
+TICKET-12347: Add new field to material maintenance screen
+- Added field ZMATERIAL_TYPE
+- Updated validation logic
+- Updated documentation
+```
+
+## Before Transport Checklist
+
+- [ ] All objects tested
+- [ ] Code Inspector (SCI) clean
+- [ ] Extended Check (SLIN) clean
+- [ ] No breakpoints
+- [ ] No dead code
+- [ ] Documentation complete
+- [ ] Transport description filled
+- [ ] Related objects included
+- [ ] Peer review completed
+
+## Transport Organization
+
+### Group Related Objects
+
+**Good:**
+- All includes for one program together
+- Class + Interface together
+- Function module + Exception class together
+
+**Bad:**
+- Mixing unrelated objects
+- Transporting incomplete functionality
+- Missing dependencies
+
+### Example Transport Contents
+
+```
+Transport: TICKET-12345
+Objects:
+  - ZMATERIAL_REPORT (Program)
+  - ZMATERIAL_REPORTTOP (Include)
+  - ZMATERIAL_REPORTC01 (Include)
+  - ZMATERIAL_REPORTF01 (Include)
+  - ZCL_MATERIAL_PROCESSOR (Class)
+  - ZIF_MATERIAL_VALIDATOR (Interface)
+  - Z_MATERIAL_GET (Function Module)
+```
+
+## Testing Before Transport
+
+- **Unit tests:** Pass all
+- **Integration tests:** Pass all
+- **User acceptance:** Approved
+- **Performance:** Within limits
+- **Security:** Authorization checks verified

@@ -1,0 +1,77 @@
+---
+description: Object-Oriented Programming and Class Design Rules
+globs: ["*.clas.abap", "*.intf.abap"]
+alwaysApply: false
+priority: 5
+---
+
+# OOP & Class Design
+
+## Class Template
+
+```abap
+CLASS zcl_material_processor DEFINITION
+  PUBLIC
+  FINAL
+  CREATE PUBLIC.
+
+  PUBLIC SECTION.
+    "! Constructor
+    "! @parameter iv_plant | Plant code
+    METHODS constructor
+      IMPORTING iv_plant TYPE werks_d.
+    
+    "! Process material
+    "! @parameter iv_matnr | Material number
+    "! @parameter rv_success | Success flag
+    "! @raising zcx_error | Processing error
+    METHODS process_material
+      IMPORTING iv_matnr TYPE matnr
+      RETURNING VALUE(rv_success) TYPE abap_bool
+      RAISING zcx_error.
+
+  PRIVATE SECTION.
+    DATA: mv_plant TYPE werks_d.
+    
+    METHODS validate_material
+      IMPORTING iv_matnr TYPE matnr
+      RETURNING VALUE(rv_valid) TYPE abap_bool.
+ENDCLASS.
+
+CLASS zcl_material_processor IMPLEMENTATION.
+  METHOD constructor.
+    mv_plant = iv_plant.
+  ENDMETHOD.
+
+  METHOD process_material.
+    DATA: lv_valid TYPE abap_bool.
+    
+    lv_valid = validate_material( iv_matnr = iv_matnr ).
+    IF lv_valid = abap_false.
+      RAISE EXCEPTION TYPE zcx_error.
+    ENDIF.
+    
+    rv_success = abap_true.
+  ENDMETHOD.
+
+  METHOD validate_material.
+    " Validation logic
+    rv_valid = abap_true.
+  ENDMETHOD.
+ENDCLASS.
+```
+
+## Visibility Rules
+
+- **Default to PRIVATE** - Expose only what's necessary
+- **PUBLIC** - Only for external interface
+- **PROTECTED** - Only for inheritance
+
+## Best Practices
+
+- Max method length: 50 lines
+- Max inheritance depth: 3 levels
+- Use FINAL when no inheritance intended
+- Prefer composition over inheritance
+- Single responsibility per method
+- Initialize attributes in constructor

@@ -1,0 +1,381 @@
+---
+description: Code Generation Checklist - Performance and Best Practices
+globs: ["*.abap", "*.prog.abap", "*.clas.abap", "*.intf.abap", "*.fugr.abap"]
+alwaysApply: false
+priority: 20
+---
+
+# Code Generation Checklist
+
+**Use this checklist when generating new ABAP code to ensure performance and quality.**
+
+## 🔴 Critical Performance Patterns
+
+### 1. READ TABLE with SORT + BINARY SEARCH
+
+**❌ BAD - Linear search O(n)**
+```abap
+READ TABLE lt_data INTO lw_data WITH KEY field = lv_value.
+```
+
+**✅ GOOD - Binary search O(log n)**
+```abap
+SORT lt_data BY field.
+READ TABLE lt_data INTO lw_data 
+  WITH KEY field = lv_value
+  BINARY SEARCH.
+```
+
+**Checklist:**
+- [ ] If READ TABLE is used in a loop, is the table SORTed first?
+- [ ] Is BINARY SEARCH added to READ TABLE after SORT?
+- [ ] Are tables sorted by the correct key field(s)?
+
+### 2. FOR ALL ENTRIES Empty Check
+
+**❌ BAD - Returns ALL records if table is empty!**
+```abap
+SELECT * FROM makt INTO TABLE lt_makt
+  FOR ALL ENTRIES IN lt_matnr
+  WHERE matnr = lt_matnr-table_line.
+```
+
+**✅ GOOD - Always check first**
+```abap
+IF lt_matnr IS NOT INITIAL.
+  SELECT matnr maktx FROM makt INTO TABLE lt_makt
+    FOR ALL ENTRIES IN lt_matnr
+    WHERE matnr = lt_matnr-table_line
+      AND spras = sy-langu.
+ENDIF.
+```
+
+**Checklist:**
+- [ ] Is there an `IF table IS NOT INITIAL` check before FOR ALL ENTRIES?
+- [ ] Are duplicate entries removed from source table before FOR ALL ENTRIES?
+
+### 3. SELECT in Loop (N+1 Problem)
+
+**❌ BAD - Multiple database hits**
+```abap
+LOOP AT lt_orders INTO lw_order.
+  SELECT SINGLE name FROM kna1 INTO lv_name
+    WHERE kunnr = lw_order-kunnr.
+ENDLOOP.
+```
+
+**✅ GOOD - Single database hit**
+```abap
+DATA: lt_kunnr TYPE TABLE OF kunnr.
+
+" Collect keys
+LOOP AT lt_orders INTO lw_order.
+  APPEND lw_order-kunnr TO lt_kunnr.
+ENDLOOP.
+
+" Remove duplicates
+SORT lt_kunnr.
+DELETE ADJACENT DUPLICATES FROM lt_kunnr.
+
+" Single SELECT
+IF lt_kunnr IS NOT INITIAL.
+  SELECT kunnr name FROM kna1 INTO TABLE lt_names
+    FOR ALL ENTRIES IN lt_kunnr
+    WHERE kunnr = lt_kunnr-table_line.
+  
+  SORT lt_names BY kunnr.
+ENDIF.
+
+" Use in loop
+LOOP AT lt_orders INTO lw_order.
+  READ TABLE lt_names INTO lw_name
+    WITH KEY kunnr = lw_order-kunnr
+    BINARY SEARCH.
+ENDLOOP.
+```
+
+**Checklist:**
+- [ ] Are there any SELECT statements inside loops?
+- [ ] If yes, can they be moved outside using FOR ALL ENTRIES?
+- [ ] Are lookup tables sorted for binary search after SELECT?
+
+### 4. Redundant Filtering
+
+**❌ BAD - Filtered in SQL, then checked again**
+```abap
+SELECT * FROM ekpo INTO TABLE lt_ekpo
+  WHERE matnr <> space.
+LOOP AT lt_ekpo INTO lw_ekpo.
+  IF lw_ekpo-matnr IS INITIAL.  " Redundant!
+    CONTINUE.
+  ENDIF.
+ENDLOOP.
+```
+
+**✅ GOOD - Trust the SQL filter**
+```abap
+SELECT ebeln matnr FROM ekpo INTO TABLE lt_ekpo
+  WHERE matnr <> space.
+LOOP AT lt_ekpo INTO lw_ekpo.
+  " Process - no need to check again
+ENDLOOP.
+```
+
+**Checklist:**
+- [ ] Are there checks in loops that duplicate SQL WHERE conditions?
+- [ ] Can redundant CONTINUE statements be removed?
+
+### 5. MODIFY in Loop vs ASSIGNING
+
+**❌ BAD - Searches for matching row each time**
+```abap
+LOOP AT lt_output INTO lw_output.
+  lw_output-field = lv_value.
+  MODIFY lt_output FROM lw_output.
+ENDLOOP.
+```
+
+**✅ GOOD - Direct memory modification**
+```abap
+FIELD-SYMBOLS: <lfs_output> TYPE ty_output.
+
+LOOP AT lt_output ASSIGNING <lfs_output>.
+  <lfs_output>-field = lv_value.
+ENDLOOP.
+```
+
+**Checklist:**
+- [ ] If modifying table rows in a loop, is ASSIGNING used?
+- [ ] If MODIFY is used, is INDEX sy-tabix specified?
+
+### 6. SELECT * vs Specific Fields
+
+**❌ BAD - Selects all fields**
+```abap
+SELECT * FROM mara INTO TABLE lt_mara.
+```
+
+**✅ GOOD - Select only needed fields**
+```abap
+SELECT matnr mtart matkl FROM mara INTO TABLE lt_mara.
+```
+
+**Checklist:**
+- [ ] Are only required fields selected in SELECT statements?
+- [ ] Is SELECT * avoided?
+
+### 7. Internal Table Structure Matches SELECT Fields
+
+**❌ BAD - Uses full table structure (wastes memory)**
+```abap
+DATA: lt_ekko TYPE TABLE OF ekko.
+
+SELECT ebeln lifnr bedat waers
+  FROM ekko
+  INTO TABLE lt_ekko.
+" Problem: Contains ALL EKKO fields, but only 4 are populated
+```
+
+**✅ GOOD - Structure matches SELECT exactly**
+```abap
+TYPES: BEGIN OF ty_ekko_selected,
+         ebeln TYPE ekko-ebeln,
+         lifnr TYPE ekko-lifnr,
+         bedat TYPE ekko-bedat,
+         waers TYPE ekko-waers,
+       END OF ty_ekko_selected.
+
+TYPES: tt_ekko_selected TYPE TABLE OF ty_ekko_selected.
+
+DATA: lt_ekko TYPE tt_ekko_selected.
+
+" SELECT fields: ebeln, lifnr, bedat, waers
+" Structure: ty_ekko_selected (matches SELECT order exactly)
+SELECT ebeln lifnr bedat waers
+  FROM ekko
+  INTO TABLE lt_ekko.
+```
+
+**Checklist:**
+- [ ] Are internal table structures matching SELECT fields exactly?
+- [ ] Are dedicated types created for each SELECT statement?
+- [ ] Do type structures match SELECT field order?
+- [ ] Are comments added showing SELECT field list?
+
+## 🟡 Syntax Compatibility (NetWeaver 7.31)
+
+### Forbidden 7.40+ Syntax
+
+**Checklist:**
+- [ ] No inline declarations: `DATA(lv_var) = 'value'`
+- [ ] No constructor operators: `NEW`, `VALUE`, `CORRESPONDING`
+- [ ] No string templates: `|text { var }|`
+- [ ] No table expressions: `itab[ key = value ]`
+- [ ] No host variables in SQL: `@variable`
+- [ ] All variables declared upfront in DATA section
+
+### Required Patterns
+
+**Checklist:**
+- [ ] All variables declared at method/function start
+- [ ] Classic OpenSQL syntax (no @host variables)
+- [ ] Traditional string concatenation (CONCATENATE, not |templates|)
+- [ ] Traditional table operations (READ TABLE, not itab[key])
+
+## 🟢 Code Quality Patterns
+
+### Variable Declaration Order
+
+**✅ GOOD - All declarations first**
+```abap
+METHOD process_data.
+  DATA: lv_matnr TYPE matnr,
+        lt_mara TYPE TABLE OF mara,
+        lw_mara TYPE mara,
+        lo_exception TYPE REF TO cx_root.
+  
+  FIELD-SYMBOLS: <lfs_mara> TYPE mara.
+  
+  " Executable statements
+  lv_matnr = '12345'.
+ENDMETHOD.
+```
+
+**Checklist:**
+- [ ] Are all DATA declarations at the beginning of the method?
+- [ ] Are FIELD-SYMBOLS declared after DATA?
+- [ ] No declarations mixed with executable code?
+
+### SY-SUBRC Checks
+
+**Checklist:**
+- [ ] SY-SUBRC checked after READ TABLE?
+- [ ] SY-SUBRC checked after SELECT?
+- [ ] SY-SUBRC checked after CALL FUNCTION?
+- [ ] Error handling implemented for non-zero SY-SUBRC?
+
+### Exception Handling
+
+**Checklist:**
+- [ ] TRY-CATCH blocks for risky operations?
+- [ ] Exception objects properly typed?
+- [ ] Error messages user-friendly?
+- [ ] Sensitive data not exposed in error messages?
+
+## 🔵 Security Patterns
+
+### Authorization Checks
+
+**Checklist:**
+- [ ] AUTHORITY-CHECK present for sensitive operations?
+- [ ] Authorization checked before data access?
+- [ ] Proper error handling for authorization failures?
+
+### Input Validation
+
+**Checklist:**
+- [ ] Input parameters validated?
+- [ ] Range tables checked for empty?
+- [ ] SQL injection risks avoided (no dynamic WHERE without proper escaping)?
+
+## 🟣 Database Access Patterns
+
+### OpenSQL WHERE Clause
+
+**❌ FORBIDDEN - IS NOT INITIAL not allowed**
+```abap
+SELECT matnr FROM makt WHERE matnr IS NOT INITIAL.
+```
+
+**✅ CORRECT - Use <> space**
+```abap
+SELECT matnr FROM makt WHERE matnr <> space.
+```
+
+**Checklist:**
+- [ ] No `IS NOT INITIAL` in WHERE clauses?
+- [ ] Using `<> space` for character fields?
+- [ ] Using `IS NOT NULL` for database NULL values?
+
+### SELECT SINGLE Usage
+
+**Checklist:**
+- [ ] SELECT SINGLE only used with ALL primary keys?
+- [ ] UP TO 1 ROWS used when not all primary keys?
+
+## 📋 Pre-Generation Checklist
+
+Before generating code, verify:
+
+- [ ] Requirements understood (BRD/FS reviewed)?
+- [ ] Data structures defined (types, tables)?
+- [ ] Selection screen fields identified?
+- [ ] Authorization requirements known?
+- [ ] Performance targets defined (< 3 sec online, < 5 min batch)?
+
+## 📋 Post-Generation Checklist
+
+After generating code, verify:
+
+- [ ] All performance patterns checked (SORT + BINARY SEARCH)?
+- [ ] No SELECT in loops?
+- [ ] FOR ALL ENTRIES has empty check?
+- [ ] No redundant filtering?
+- [ ] ASSIGNING used for table modifications?
+- [ ] Only required fields in SELECT?
+- [ ] Internal table structures match SELECT fields exactly?
+- [ ] No 7.40+ syntax?
+- [ ] All variables declared upfront?
+- [ ] SY-SUBRC checks present?
+- [ ] Exception handling implemented?
+- [ ] Authorization checks present?
+- [ ] Input validation present?
+- [ ] Code Inspector would pass?
+- [ ] Extended Check would pass?
+
+## 🎯 Quick Reference: Common Mistakes
+
+| Issue | Bad Pattern | Good Pattern |
+|-------|-------------|--------------|
+| Table lookup | `READ TABLE` without SORT | `SORT` then `READ TABLE ... BINARY SEARCH` |
+| Database in loop | `SELECT` inside `LOOP` | `FOR ALL ENTRIES` outside loop |
+| Empty FOR ALL ENTRIES | No check before `FOR ALL ENTRIES` | `IF table IS NOT INITIAL` |
+| Table modification | `MODIFY` in loop | `ASSIGNING` in loop |
+| Redundant check | Check after SQL filter | Trust SQL filter |
+| Table structure | `TABLE OF ekko` for partial SELECT | Dedicated type matching SELECT fields |
+| Select all | `SELECT *` | `SELECT field1 field2` |
+| Inline declaration | `DATA(lv_var) = value` | `DATA: lv_var TYPE type.` then assign |
+
+## 🔍 Performance Impact Examples
+
+### Example 1: Table Lookup
+- **Before:** 1,000 items × 1,000 comparisons = 1,000,000 operations
+- **After:** 1,000 items × 10 comparisons = 10,000 operations
+- **Improvement:** 100x faster
+
+### Example 2: Database in Loop
+- **Before:** 1,000 items × 1 database call = 1,000 database calls
+- **After:** 1 database call with FOR ALL ENTRIES
+- **Improvement:** 1000x fewer database calls
+
+## 💡 Remember
+
+1. **Performance is not optional** - Always optimize table lookups
+2. **Database calls are expensive** - Minimize database round trips
+3. **Sort before search** - Binary search is 100x faster than linear
+4. **Trust SQL filters** - Don't duplicate WHERE conditions in loops
+5. **Use ASSIGNING** - Direct memory access is faster than MODIFY
+
+## 🚀 Code Generation Workflow
+
+1. **Understand Requirements** → Review BRD/FS
+2. **Design Data Flow** → Identify tables, lookups, joins
+3. **Generate Code** → Follow patterns, use checklist
+4. **Review Performance** → Check all critical patterns
+5. **Verify Syntax** → Ensure 7.31 compatibility
+6. **Test & Optimize** → Run Code Inspector, check runtime
+
+---
+
+**Last Updated:** Based on performance optimization review of ZPO_MATERIAL_REPORT
+**Priority:** High - Use this checklist for every code generation

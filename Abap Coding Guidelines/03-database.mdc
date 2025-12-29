@@ -1,0 +1,246 @@
+---
+description: Database Access and Performance Rules
+globs: ["*.abap", "*.prog.abap", "*.clas.abap"]
+alwaysApply: false
+priority: 4
+---
+
+# Database & Performance Rules
+
+## Forbidden Patterns
+
+### SELECT * ❌
+```abap
+" ❌ FORBIDDEN
+SELECT * FROM mara INTO TABLE lt_mara.
+SELECT SINGLE * FROM mara INTO lw_mara.
+
+" ✅ CORRECT - Specify fields
+SELECT matnr mtart matkl
+  FROM mara
+  INTO TABLE lt_mara
+  WHERE matnr IN s_matnr.
+```
+
+### Internal Table Structure Must Match SELECT Fields ❌
+```abap
+" ❌ NOT OPTIMAL - Uses full table structure (wastes memory)
+DATA: lt_ekko TYPE TABLE OF ekko.
+
+SELECT ebeln lifnr bedat waers
+  FROM ekko
+  INTO TABLE lt_ekko
+  WHERE ebeln IN s_ebeln.
+" Problem: lt_ekko contains ALL fields from EKKO, but only 4 are populated
+
+" ✅ CORRECT - Create structure matching SELECT fields exactly
+TYPES: BEGIN OF ty_ekko_selected,
+         ebeln TYPE ekko-ebeln,      " Matches SELECT field 1
+         lifnr TYPE ekko-lifnr,      " Matches SELECT field 2
+         bedat TYPE ekko-bedat,      " Matches SELECT field 3
+         waers TYPE ekko-waers,      " Matches SELECT field 4
+       END OF ty_ekko_selected.
+
+TYPES: tt_ekko_selected TYPE TABLE OF ty_ekko_selected.
+
+DATA: lt_ekko TYPE tt_ekko_selected.
+
+" SELECT fields: ebeln, lifnr, bedat, waers
+" Structure: ty_ekko_selected (matches SELECT order exactly)
+SELECT ebeln lifnr bedat waers
+  FROM ekko
+  INTO TABLE lt_ekko
+  WHERE ebeln IN s_ebeln.
+```
+
+**Rationale:** 
+- Internal table structure must match SELECT fields in **order** and **type**
+- Using full table structure (`TABLE OF ekko`) wastes memory - only selected fields are populated
+- Creating dedicated types matching SELECT exactly:
+  - Reduces memory footprint
+  - Improves performance
+  - Makes code more maintainable (clear mapping between SELECT and structure)
+  - Prevents field order mismatches
+
+**Best Practice:**
+- Create type structures that match SELECT statements exactly
+- Add comments showing SELECT field list for maintainability
+- If SELECT fields change, update corresponding type structure
+
+### SELECT in Loop ❌
+```abap
+" ❌ FORBIDDEN
+LOOP AT lt_orders INTO lw_order.
+  SELECT SINGLE kunnr name1
+    FROM kna1
+    INTO lw_kna1
+    WHERE kunnr = lw_order-kunnr.
+ENDLOOP.
+
+" ✅ CORRECT - FOR ALL ENTRIES
+DATA: lt_kunnr TYPE TABLE OF kunnr.
+
+lt_kunnr = lt_orders[].  " Extract customer numbers
+
+IF lt_kunnr IS NOT INITIAL.
+  SELECT kunnr name1
+    FROM kna1
+    INTO TABLE lt_kna1
+    FOR ALL ENTRIES IN lt_kunnr
+    WHERE kunnr = lt_kunnr-table_line.
+ENDIF.
+```
+
+### Nested Loops ❌
+```abap
+" ❌ FORBIDDEN
+LOOP AT lt_orders INTO lw_order.
+  LOOP AT lt_items INTO lw_item
+    WHERE vbeln = lw_order-vbeln.
+    " Process
+  ENDLOOP.
+ENDLOOP.
+
+" ✅ CORRECT - Parallel cursor with BINARY SEARCH
+SORT lt_items BY vbeln.
+
+LOOP AT lt_orders INTO lw_order.
+  READ TABLE lt_items INTO lw_item
+    WITH KEY vbeln = lw_order-vbeln
+    BINARY SEARCH.
+  IF sy-subrc = 0.
+    " Process
+  ENDIF.
+ENDLOOP.
+```
+
+### MODIFY in Loop ❌
+```abap
+" ❌ FORBIDDEN - Inefficient: MODIFY searches for matching row
+LOOP AT lt_output INTO lw_output.
+  lw_output-field = lv_value.
+  MODIFY lt_output FROM lw_output.
+ENDLOOP.
+
+" ✅ CORRECT - Direct modification using ASSIGNING
+FIELD-SYMBOLS: <lfs_output> TYPE ty_output.
+
+LOOP AT lt_output ASSIGNING <lfs_output>.
+  <lfs_output>-field = lv_value.
+ENDLOOP.
+
+" ✅ ALTERNATIVE - Use INDEX if you need INTO
+LOOP AT lt_output INTO lw_output.
+  lw_output-field = lv_value.
+  MODIFY lt_output FROM lw_output INDEX sy-tabix.
+ENDLOOP.
+```
+
+**Rationale:** Using `LOOP AT ... ASSIGNING` directly modifies the table row in memory without searching, which is significantly more efficient than `MODIFY ... FROM` that searches for a matching row by comparing all fields.
+
+## SELECT SINGLE Usage
+
+```abap
+" ✅ Use SELECT SINGLE only with ALL primary keys
+SELECT SINGLE matnr mtart
+  FROM mara
+  INTO lw_mara
+  WHERE matnr = lv_matnr.  " matnr is primary key
+
+" ✅ Use UP TO 1 ROWS when not all primary keys
+SELECT matnr mtart
+  FROM mara
+  UP TO 1 ROWS
+  INTO lw_mara
+  WHERE mtart = lv_mtart.  " mtart is not primary key
+```
+
+## FOR ALL ENTRIES Pattern
+
+```abap
+" Always check NOT INITIAL
+IF lt_source IS NOT INITIAL.
+  SELECT field1 field2
+    FROM table
+    INTO TABLE lt_target
+    FOR ALL ENTRIES IN lt_source
+    WHERE key = lt_source-key.
+ENDIF.
+
+" Deduplicate if needed
+SORT lt_target BY key.
+DELETE ADJACENT DUPLICATES FROM lt_target COMPARING key.
+```
+
+## OpenSQL WHERE Clause Restrictions
+
+### IS NOT INITIAL in WHERE Clause ❌
+
+```abap
+" ❌ FORBIDDEN - IS NOT INITIAL not allowed in OpenSQL WHERE
+SELECT matnr maktx
+  FROM makt
+  INTO TABLE lt_makt
+  WHERE matnr IS NOT INITIAL.
+
+" ✅ CORRECT - Use <> space for character fields
+SELECT matnr maktx
+  FROM makt
+  INTO TABLE lt_makt
+  WHERE matnr <> space.
+
+" ✅ CORRECT - Use IS NOT NULL for database NULL values
+SELECT matnr maktx
+  FROM makt
+  INTO TABLE lt_makt
+  WHERE matnr IS NOT NULL.
+
+" ✅ CORRECT - Filter after SELECT if needed
+SELECT matnr maktx
+  FROM makt
+  INTO TABLE lt_makt
+  WHERE matnr IN s_matnr.
+
+LOOP AT lt_makt INTO lw_makt.
+  IF lw_makt-matnr IS INITIAL.
+    CONTINUE.
+  ENDIF.
+  " Process
+ENDLOOP.
+```
+
+**Rationale:** OpenSQL WHERE clauses only support `IS NULL` and `IS NOT NULL` operators. `IS NOT INITIAL` is an ABAP expression that cannot be used in SQL WHERE clauses. Use `<> space` for character fields or filter in ABAP code after the SELECT.
+
+## SY-SUBRC Checks
+
+```abap
+" ✅ Check immediately after operation
+READ TABLE lt_data INTO lw_data WITH KEY matnr = lv_matnr.
+IF sy-subrc = 0.
+  " Found
+ELSE.
+  " Not found
+ENDIF.
+
+SELECT SINGLE matnr
+  FROM mara
+  INTO lv_matnr
+  WHERE matnr = lv_matnr.
+IF sy-subrc = 0.
+  " Exists
+ENDIF.
+
+CALL FUNCTION 'Z_PROCESS'
+  EXCEPTIONS
+    error = 1.
+IF sy-subrc <> 0.
+  " Handle error
+ENDIF.
+```
+
+## Performance Targets
+
+- Database time: < 50% of total runtime
+- Online response: < 3 seconds
+- Batch processing: < 5 minutes
+- Avoid full table scans

@@ -1,0 +1,191 @@
+---
+description: RFC and Web Service Standards
+globs: ["*.fugr.abap", "*.abap"]
+alwaysApply: false
+priority: 10
+---
+
+# RFC & Web Services
+
+## Function Module Design
+
+### Naming
+- **Prefix:** `Z_*` or `Y_*`
+- **Example:** `Z_MATERIAL_GET`, `Y_SALES_CALCULATE`
+
+### Requirements
+- RFC-enabled: Yes (check in SE37)
+- Exception handling: Mandatory
+- Documentation: Mandatory
+- Remote-enabled attribute: Must be checked
+
+## Parameter Design
+
+### Use Structures
+```abap
+" ✅ CORRECT - Use structures for multiple related fields
+FUNCTION z_material_get.
+  IMPORTING
+    VALUE(is_input) TYPE gty_material_input
+  EXPORTING
+    VALUE(es_output) TYPE gty_material_output
+  EXCEPTIONS
+    material_not_found
+    no_authority.
+```
+
+### Use Tables
+```abap
+" ✅ CORRECT - Use TABLES parameter for lists
+FUNCTION z_materials_get.
+  TABLES
+    it_materials TYPE gty_materials
+  EXCEPTIONS
+    error.
+```
+
+### Table Types for FM Parameters - MANDATORY
+
+**❌ FORBIDDEN:** Generic table types in function module parameters
+```abap
+" ❌ FORBIDDEN - Generic table type
+FUNCTION z_materials_get.
+  TABLES
+    it_materials TYPE TABLE  " Generic - not allowed
+  EXCEPTIONS
+    error.
+```
+
+**✅ REQUIRED:** Use specific table types defined in TOP or type pool
+```abap
+" ✅ CORRECT - Specific table type
+TYPES: BEGIN OF gty_material,
+         matnr TYPE matnr,
+         maktx TYPE maktx,
+       END OF gty_material.
+
+TYPES: gty_materials TYPE TABLE OF gty_material.
+
+FUNCTION z_materials_get.
+  TABLES
+    it_materials TYPE gty_materials  " Specific type - required
+  EXCEPTIONS
+    error.
+```
+
+**Requirements:**
+- Define table types in TOP include or type pool
+- Use descriptive names: `gty_*` for both structure types and table types (global types)
+- Never use generic `TABLE` or `STANDARD TABLE` in FM parameters
+- Table types must be defined before function module definition
+
+**Rationale:** 
+- Type safety and compile-time checking
+- Better documentation and IDE support
+- Easier maintenance and refactoring
+- Consistent with ABAP best practices
+
+### Avoid CHANGING
+- Use IMPORTING/EXPORTING instead
+- Use exceptions for error handling
+- Pass by value: Use VALUE for IMPORTING when appropriate
+
+**Rationale:** Structures and exceptions provide better error handling
+
+## Error Handling Pattern
+
+```abap
+FUNCTION z_material_get.
+  "Function module code
+  IF error_occurred = abap_true.
+    MESSAGE ID 'ZMSG' TYPE 'E' NUMBER '001' 
+      RAISING material_not_found.
+  ENDIF.
+ENDFUNCTION.
+```
+
+## Performance Requirements
+
+- **Avoid large data transfer:** Keep payloads reasonable
+- **Use pagination:** For large datasets
+- **Timeout handling:** Mandatory
+- **Max records per call:** 1000
+- **Implement delta logic:** When appropriate
+
+## Security
+
+### Authorization Check (Mandatory)
+
+```abap
+"Authorization check in RFC
+AUTHORITY-CHECK OBJECT 'S_RFC'
+  ID 'RFC_TYPE' FIELD 'FUNC'
+  ID 'RFC_NAME' FIELD 'Z_MATERIAL_GET'
+  ID 'ACTVT' FIELD '16'.
+IF sy-subrc <> 0.
+  RAISE EXCEPTION TYPE zcx_no_authority.
+ENDIF.
+```
+
+### Input Validation
+- Validate all input parameters
+- Sanitize output data
+- Check RFC authority
+
+## RFC Types
+
+- **sRFC:** Synchronous RFC (default)
+- **aRFC:** Asynchronous RFC (parallel processing)
+- **tRFC:** Transactional RFC (guaranteed execution)
+- **qRFC:** Queued RFC (sequential processing)
+- **bgRFC:** Background RFC (reliable async processing)
+
+## Testing Requirements
+
+- Test in SE37: Yes
+- Test error scenarios: Yes
+- Test with large data: Yes
+- Document test cases: Yes
+
+## Complete Function Module Template
+
+```abap
+FUNCTION z_material_get.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_MATNR) TYPE  MATNR
+*"  EXPORTING
+*"     VALUE(ES_MARA) TYPE  MARA
+*"  EXCEPTIONS
+*"      MATERIAL_NOT_FOUND
+*"      NO_AUTHORITY
+*"----------------------------------------------------------------------
+  DATA: lw_mara TYPE mara.
+
+  " Authorization check
+  AUTHORITY-CHECK OBJECT 'S_RFC'
+    ID 'RFC_TYPE' FIELD 'FUNC'
+    ID 'RFC_NAME' FIELD 'Z_MATERIAL_GET'
+    ID 'ACTVT' FIELD '16'.
+  IF sy-subrc <> 0.
+    RAISE no_authority.
+  ENDIF.
+
+  " Input validation
+  IF iv_matnr IS INITIAL.
+    RAISE material_not_found.
+  ENDIF.
+
+  " Get data
+  SELECT SINGLE *
+    FROM mara
+    INTO es_mara
+    WHERE matnr = iv_matnr.
+  
+  IF sy-subrc <> 0.
+    RAISE material_not_found.
+  ENDIF.
+
+ENDFUNCTION.
+```

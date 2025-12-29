@@ -1,0 +1,52 @@
+---
+description: Security and Authorization Rules
+globs: ["*.prog.abap", "*.abap"]
+alwaysApply: false
+priority: 7
+---
+
+# Security & Authorization
+
+## Mandatory Authorization Check
+
+```abap
+INITIALIZATION.
+  AUTHORITY-CHECK OBJECT 'S_TCODE'
+                  ID 'TCD' FIELD sy-tcode.
+  IF sy-subrc IS NOT INITIAL.
+    MESSAGE w077(s#) WITH sy-tcode DISPLAY LIKE 'E'.
+    LEAVE PROGRAM.
+  ENDIF.
+```
+
+## Forbidden Hard-Coding
+
+Never hard-code:
+- Company code
+- Plant
+- Currency
+- User ID
+- String literals (use text elements)
+- Master data values
+
+```abap
+" ❌ FORBIDDEN
+IF bukrs = '1000'.
+WRITE: / 'Please enter material'.
+
+" ✅ CORRECT
+CONSTANTS: lc_company TYPE bukrs VALUE '1000'.
+IF bukrs = lc_company.
+WRITE: / 'Please enter material'(001).
+```
+
+## Text Elements
+
+```abap
+" ✅ Always use text elements
+WRITE: / 'Processing started'(001).
+MESSAGE 'Invalid input'(002) TYPE 'E'.
+
+" ✅ Use message classes
+MESSAGE ID 'ZMSG' TYPE 'E' NUMBER '001' WITH lv_param.
+```

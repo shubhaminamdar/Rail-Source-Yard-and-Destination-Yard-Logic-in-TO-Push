@@ -1,0 +1,203 @@
+---
+description: Background Job and Batch Processing Rules
+globs: ["*.prog.abap", "*.abap"]
+alwaysApply: false
+priority: 15
+---
+
+# Background Job / Batch Processing
+
+## Design Principles
+
+- **Support background execution:** Yes
+- **Avoid user interaction:** Yes
+- **No popup messages:** Yes
+- **Use application log:** Yes
+- **Check SY-BATCH:** Yes
+
+## Selection Screen
+
+### Provide Variant
+- **Mandatory:** Yes
+- **Test mode parameter:** Recommended
+
+```abap
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-001.
+PARAMETERS: p_bukrs TYPE bukrs OBLIGATORY.
+PARAMETERS: p_test TYPE abap_bool AS CHECKBOX DEFAULT abap_false.
+SELECTION-SCREEN END OF BLOCK b1.
+```
+
+## SY-BATCH Check
+
+### Mandatory Pattern
+
+```abap
+DATA: lv_log_handle TYPE balloghndl,
+      lw_log TYPE bal_s_log.
+
+IF sy-batch = abap_true.
+  " Background mode - use application log
+  lw_log-object = 'ZMATERIAL'.
+  lw_log-subobject = 'PROCESS'.
+  lw_log-extnumber = sy-datum.
+  
+  CALL FUNCTION 'BAL_LOG_CREATE'
+    EXPORTING
+      i_s_log = lw_log
+    IMPORTING
+      e_log_handle = lv_log_handle.
+ELSE.
+  " Foreground mode - can use messages
+  MESSAGE 'Processing started'(001) TYPE 'S'.
+ENDIF.
+```
+
+## Error Handling
+
+- **Log all errors:** Yes
+- **Send notification:** On critical errors
+- **Continue on error:** When possible
+- **Return code:** Set sy-subrc appropriately
+
+### Error Logging Pattern
+
+```abap
+IF sy-batch = abap_true.
+  " Log error to application log
+  CALL FUNCTION 'BAL_LOG_MSG_ADD'
+    EXPORTING
+      i_log_handle = lv_log_handle
+      i_msgty = 'E'
+      i_msgid = 'ZMSG'
+      i_msgno = '001'
+      i_msgv1 = lv_error_text.
+ELSE.
+  " Show message in foreground
+  MESSAGE lv_error_text TYPE 'E'.
+ENDIF.
+```
+
+## Performance
+
+### Package Processing
+
+- **Package size:** Process in chunks (e.g., 1000 records)
+- **Commit frequency:** After each package
+- **Progress indicator:** Use SAPGUI_PROGRESS_INDICATOR for foreground
+- **Avoid COMMIT in loop:** Commit after package processing
+
+### Package Processing Pattern
+
+```abap
+DATA: lt_package TYPE TABLE OF ty_data,
+      lc_package_size TYPE i VALUE 1000,
+      lv_processed TYPE i,
+      lv_total TYPE i.
+
+lv_total = lines( gt_data ).
+
+LOOP AT gt_data INTO gw_data.
+  APPEND gw_data TO lt_package.
+  
+  IF lines( lt_package ) >= lc_package_size.
+    " Process package - Use method call instead of PERFORM
+    " go_report->process_package( it_package = lt_package iv_log_handle = lv_log_handle ).
+    
+    " Commit after package
+    COMMIT WORK AND WAIT.
+    
+    " Update progress
+    lv_processed = lv_processed + lines( lt_package ).
+    IF sy-batch = abap_false.
+      CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
+        EXPORTING
+          percentage = ( lv_processed * 100 ) / lv_total
+          text = 'Processing...'(002).
+    ENDIF.
+    
+    CLEAR lt_package.
+  ENDIF.
+ENDLOOP.
+
+" Process remaining records - Use method call instead of PERFORM
+IF lt_package IS NOT INITIAL.
+  " go_report->process_package( it_package = lt_package iv_log_handle = lv_log_handle ).
+  COMMIT WORK AND WAIT.
+ENDIF.
+
+" Save log
+IF sy-batch = abap_true.
+  CALL FUNCTION 'BAL_DB_SAVE'
+    EXPORTING
+      i_client = sy-mandt
+      i_save_all = 'X'.
+ENDIF.
+```
+
+## Application Log Usage
+
+### Create Log
+
+```abap
+DATA: lv_log_handle TYPE balloghndl,
+      lw_log TYPE bal_s_log.
+
+lw_log-object = 'ZMATERIAL'.
+lw_log-subobject = 'PROCESS'.
+lw_log-extnumber = sy-datum && sy-uzeit.
+
+CALL FUNCTION 'BAL_LOG_CREATE'
+  EXPORTING
+    i_s_log = lw_log
+  IMPORTING
+    e_log_handle = lv_log_handle.
+```
+
+### Add Messages
+
+```abap
+" Error
+CALL FUNCTION 'BAL_LOG_MSG_ADD'
+  EXPORTING
+    i_log_handle = lv_log_handle
+    i_msgty = 'E'
+    i_msgid = 'ZMSG'
+    i_msgno = '001'
+    i_msgv1 = lv_param.
+
+" Warning
+CALL FUNCTION 'BAL_LOG_MSG_ADD'
+  EXPORTING
+    i_log_handle = lv_log_handle
+    i_msgty = 'W'
+    i_msgid = 'ZMSG'
+    i_msgno = '002'.
+
+" Success
+CALL FUNCTION 'BAL_LOG_MSG_ADD'
+  EXPORTING
+    i_log_handle = lv_log_handle
+    i_msgty = 'S'
+    i_msgid = 'ZMSG'
+    i_msgno = '003'.
+```
+
+### Save Log
+
+```abap
+CALL FUNCTION 'BAL_DB_SAVE'
+  EXPORTING
+    i_client = sy-mandt
+    i_save_all = 'X'.
+```
+
+## Best Practices
+
+- Always check `sy-batch` flag
+- Use application log in background mode
+- Process in packages to avoid memory issues
+- Commit after each package
+- Provide progress indicator for foreground
+- Log all errors and warnings
+- Save log at end of processing

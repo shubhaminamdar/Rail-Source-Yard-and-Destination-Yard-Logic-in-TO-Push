@@ -1,0 +1,90 @@
+---
+description: Interface and API Design Standards
+globs: ["*.intf.abap", "*.clas.abap"]
+alwaysApply: false
+priority: 11
+---
+
+# Interface & API Design
+
+## Interface Naming
+
+- **Prefix:** `ZIF_*` or `YIF_*`
+- **Descriptive:** Yes
+- **Example:** `ZIF_MATERIAL_VALIDATOR`
+
+## Design Principles
+
+- **Single Responsibility:** Each interface should have one clear purpose
+- **Stable Interface:** Avoid breaking changes
+- **Versioning:** Create new interface for breaking changes (e.g., `ZIF_API_V2`)
+- **Small and Focused:** Keep interfaces minimal
+
+## Method Design
+
+- **Clear Purpose:** Each method should do one thing well
+- **Minimal Parameters:** Keep parameter lists short
+- **Use RETURNING for single value:** Cleaner syntax
+- **Use EXPORTING for multiple values:** When needed
+- **Use CHANGING sparingly:** Prefer IMPORTING/EXPORTING
+- **Avoid IMPORTING tables:** Use `TYPE STANDARD TABLE` instead
+
+## Parameter Naming Convention
+
+| Direction | Type | Prefix | Example |
+|-----------|------|--------|---------|
+| IMPORTING | Value | `iv_` | `iv_matnr` |
+| IMPORTING | Reference | `ir_` | `ir_data` |
+| IMPORTING | Table | `it_` | `it_materials` |
+| IMPORTING | Structure | `is_` | `is_header` |
+| EXPORTING | Value | `ev_` | `ev_result` |
+| EXPORTING | Reference | `er_` | `er_object` |
+| EXPORTING | Table | `et_` | `et_items` |
+| EXPORTING | Structure | `es_` | `es_status` |
+| CHANGING | Value | `cv_` | `cv_counter` |
+| CHANGING | Reference | `cr_` | `cr_ref` |
+| CHANGING | Table | `ct_` | `ct_data` |
+| CHANGING | Structure | `cs_` | `cs_record` |
+| RETURNING | Value | `rv_` | `rv_success` |
+| RETURNING | Reference | `rr_` | `rr_instance` |
+| RETURNING | Table | `rt_` | `rt_results` |
+| RETURNING | Structure | `rs_` | `rs_output` |
+
+## Documentation
+
+- **Mandatory:** Yes
+- **Include usage examples:** Yes
+- **Document all methods:** Yes
+- **Use ABAP Doc:** Yes
+
+## Interface Example
+
+```abap
+INTERFACE zif_material_validator.
+  "! Validate material master data
+  "! @parameter iv_matnr | Material number to validate
+  "! @parameter rv_valid | True if material is valid
+  "! @raising zcx_validation_error | When validation fails
+  METHODS validate_material
+    IMPORTING iv_matnr TYPE matnr
+    RETURNING VALUE(rv_valid) TYPE abap_bool
+    RAISING zcx_validation_error.
+    
+  "! Get material details
+  "! @parameter iv_matnr | Material number
+  "! @parameter es_material | Material details
+  "! @raising zcx_validation_error | When material not found
+  METHODS get_material_details
+    IMPORTING iv_matnr TYPE matnr
+    EXPORTING es_material TYPE gty_material
+    RAISING zcx_validation_error.
+ENDINTERFACE.
+```
+
+## Best Practices
+
+- Keep interfaces small (max 5-10 methods)
+- One interface per responsibility
+- Document all public methods
+- Use exceptions for error handling
+- Avoid breaking changes - create new version instead

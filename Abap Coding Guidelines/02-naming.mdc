@@ -1,0 +1,193 @@
+---
+description: ABAP Naming Conventions and Standards
+globs: ["*.abap", "*.prog.abap", "*.clas.abap", "*.fugr.abap", "*.intf.abap"]
+alwaysApply: false
+priority: 3
+---
+
+# Naming Conventions
+
+## Variable Prefixes
+
+### Local Variables
+```abap
+DATA: lv_matnr TYPE matnr,           " Variable
+      lt_materials TYPE TABLE OF mara, " Table
+      lw_material TYPE mara,           " Work area / Structure
+      lo_alv TYPE REF TO cl_gui_alv_grid, " Object
+      lc_max_rows TYPE i VALUE 1000,   " Constant
+      lr_data TYPE REF TO data.       " Data reference
+
+FIELD-SYMBOLS: <lfs_material> TYPE mara. " Local field symbol
+```
+
+### Global Variables
+```abap
+DATA: gv_total TYPE i,               " Global variable
+      gt_items TYPE TABLE OF gty_item, " Global table
+      gw_header TYPE gty_header,       " Global work area
+      go_instance TYPE REF TO zcl_class, " Global object
+      gc_company TYPE bukrs VALUE '1000', " Global constant
+      gr_table TYPE REF TO data.      " Global data reference
+
+FIELD-SYMBOLS: <gfs_header> TYPE gty_header. " Global field symbol
+```
+
+## Type Definitions
+
+### Local Types
+```abap
+" Structure type
+TYPES: BEGIN OF lty_material,
+         matnr TYPE matnr,
+         maktx TYPE maktx,
+       END OF lty_material.
+
+" Table type (uses lty_ prefix)
+TYPES: lty_materials TYPE TABLE OF lty_material.
+```
+
+### Global Types
+```abap
+" Structure type
+TYPES: BEGIN OF gty_output,
+         matnr TYPE matnr,
+         total TYPE i,
+       END OF gty_output.
+
+" Table type (uses gty_ prefix)
+TYPES: gty_output_table TYPE TABLE OF gty_output.
+```
+
+**Note:** Use `lty_` for local types and `gty_` for global types. This applies to both structure types and table types.
+
+### Method Parameters
+```abap
+METHODS process_material
+  IMPORTING
+    iv_matnr TYPE matnr              " Import value
+    it_plants TYPE gty_plants        " Import table
+    is_header TYPE gty_header        " Import structure
+    io_logger TYPE REF TO zif_logger " Import object
+  EXPORTING
+    ev_result TYPE abap_bool         " Export value
+    et_messages TYPE gty_messages    " Export table
+    es_output TYPE gty_output        " Export structure
+  CHANGING
+    cv_counter TYPE i                " Change value
+    ct_data TYPE gty_data            " Change table
+  RETURNING
+    VALUE(rv_success) TYPE abap_bool. " Return value
+```
+
+### Selection Screen
+```abap
+PARAMETERS: p_bukrs TYPE bukrs,      " Parameter
+            p_date TYPE datum.
+
+SELECT-OPTIONS: s_matnr FOR mara-matnr, " Select option
+                s_werks FOR marc-werks.
+```
+
+## Object Naming
+
+### Classes
+```abap
+CLASS zcl_material_processor DEFINITION.  " Z/Y prefix
+CLASS ycl_sales_calculator DEFINITION.
+```
+
+### Interfaces
+```abap
+INTERFACE zif_material_validator.
+INTERFACE yif_data_processor.
+```
+
+### Function Modules
+```abap
+FUNCTION z_material_get.
+FUNCTION y_sales_calculate.
+```
+
+## Program Includes (30 chars max)
+
+Format: `ZXXXXXXXXXXXXXXXXXXXXXXXTNN`
+
+```abap
+ZMATERIAL_MAINTENANCETOP  " Global declarations (TOP) - MANDATORY
+ZMATERIAL_MAINTENANCET01  " Type declarations (T01) - Optional
+ZMATERIAL_MAINTENANCEC01  " Classes (C01) - MANDATORY for reports
+ZMATERIAL_MAINTENANCEF01  " Forms/Subroutines (F01) - FORBIDDEN for new reports
+ZMATERIAL_MAINTENANCEI01  " PAI modules (I01) - Optional
+ZMATERIAL_MAINTENANCEO01  " PBO modules (O01) - Optional
+```
+
+**Note:** F01 include is FORBIDDEN for new reports. All logic must be in class methods (C01).
+
+## Complete Naming Reference
+
+| Data Object | Local Prefix | Global Prefix | Example |
+|------------|-------------|---------------|---------|
+| **Variable** | `lv_` | `gv_` | `lv_count`, `gv_total` |
+| **Table** | `lt_` | `gt_` | `lt_materials`, `gt_items` |
+| **Work Area/Structure** | `lw_` | `gw_` | `lw_material`, `gw_header` |
+| **Object Reference** | `lo_` | `go_` | `lo_alv`, `go_instance` |
+| **Constant** | `lc_` | `gc_` | `lc_max`, `gc_company` |
+| **Field Symbol** | `<lfs_` | `<gfs_` | `<lfs_mat>`, `<gfs_header>` |
+| **Type Definition (Structure)** | `lty_` | `gty_` | `lty_material`, `gty_output` |
+| **Type Definition (Table Type)** | `lty_` | `gty_` | `lty_materials`, `gty_output_table` |
+| **Data Reference** | `lr_` | `gr_` | `lr_data`, `gr_table` |
+| **Parameter** | `p_` | - | `p_bukrs` |
+| **Select-Option** | `s_` | - | `s_matnr` |
+
+## Type Preference
+
+```abap
+" ✅ CORRECT - Use data element
+DATA: lv_matnr TYPE matnr.
+
+" ❌ AVOID - Table field reference (slower)
+DATA: lv_matnr TYPE mara-matnr.
+```
+
+## Constants Rules
+
+### Forbidden: System Variables in Constants ❌
+
+```abap
+" ❌ FORBIDDEN - System variables are runtime values, not constants
+CONSTANTS: lc_langu TYPE spras VALUE sy-langu.
+CONSTANTS: lc_date TYPE datum VALUE sy-datum.
+CONSTANTS: lc_user TYPE uname VALUE sy-uname.
+CONSTANTS: lc_time TYPE uzeit VALUE sy-uzeit.
+
+" ✅ CORRECT - Use system variables directly
+SELECT matnr maktx
+  FROM makt
+  INTO TABLE lt_makt
+  WHERE spras = sy-langu.
+
+" ✅ CORRECT - Use fixed literal values for constants
+CONSTANTS: lc_max_rows TYPE i VALUE 1000.
+CONSTANTS: lc_company TYPE bukrs VALUE '1000'.
+CONSTANTS: lc_status TYPE char1 VALUE 'A'.
+```
+
+**Rationale:** Constants must have fixed, compile-time values. System variables (sy-*) are runtime values that change during program execution and cannot be used in CONSTANTS declarations.
+
+### Common System Variables (Use Directly, Not in Constants)
+
+- `sy-langu` - Current user language
+- `sy-datum` - Current date
+- `sy-uzeit` - Current time
+- `sy-uname` - Current user
+- `sy-mandt` - Current client
+- `sy-sysid` - System ID
+- `sy-tcode` - Current transaction code
+
+## Important Notes
+
+- **Work Areas**: Always use `lw_` for local and `gw_` for global. Do NOT use `ls_` or `gs_`.
+- **Field Symbols**: Use `<lfs_` for local and `<gfs_` for global field symbols.
+- **Types**: Use `lty_` for local types and `gty_` for global types. This applies to both structure types and table types (no separate `ltt_`/`gtt_` prefixes).
+- **Constants**: Must have fixed literal values. Never use system variables (sy-*) in CONSTANTS declarations.

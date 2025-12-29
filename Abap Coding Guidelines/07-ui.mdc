@@ -1,0 +1,80 @@
+---
+description: User Interface Guidelines - Selection Screen and ALV
+globs: ["*.prog.abap", "*.abap"]
+alwaysApply: false
+priority: 8
+---
+
+# UI Guidelines
+
+## Selection Screen
+
+### Mandatory Field Validation
+
+```abap
+PARAMETERS: p_bukrs TYPE bukrs OBLIGATORY.
+
+AT SELECTION-SCREEN ON p_bukrs.
+  IF p_bukrs IS INITIAL.
+    MESSAGE 'Company Code is required'(001) TYPE 'E'.
+  ENDIF.
+  
+  " Validate value
+  SELECT SINGLE bukrs
+    FROM t001
+    INTO p_bukrs
+    WHERE bukrs = p_bukrs.
+  IF sy-subrc <> 0.
+    MESSAGE 'Invalid Company Code'(002) TYPE 'E'.
+  ENDIF.
+```
+
+### Layout
+
+```abap
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-001.
+  PARAMETERS: p_bukrs TYPE bukrs OBLIGATORY.  " Company Code
+  SELECT-OPTIONS: s_matnr FOR mara-matnr.     " Material Number
+SELECTION-SCREEN END OF BLOCK b1.
+
+" Avoid abbreviations in labels
+" Use Capital Case: "Company Code" not "Comp Code"
+```
+
+## ALV Display
+
+### Field Catalog Rules
+
+- Always show Code + Description together
+- Amount/Quantity fields: Right justified
+- Other fields: Left justified
+- Multiple ALVs: Each must have title
+
+```abap
+" Material Number + Description
+CLEAR lw_fieldcat.
+lw_fieldcat-fieldname = 'MATNR'.
+lw_fieldcat-scrtext_l = 'Material Number'(003).
+lw_fieldcat-just = 'L'.
+APPEND lw_fieldcat TO lt_fieldcat.
+
+CLEAR lw_fieldcat.
+lw_fieldcat-fieldname = 'MAKTX'.
+lw_fieldcat-scrtext_l = 'Material Description'(004).
+lw_fieldcat-just = 'L'.
+APPEND lw_fieldcat TO lt_fieldcat.
+
+" Amount - Right justified
+CLEAR lw_fieldcat.
+lw_fieldcat-fieldname = 'NETWR'.
+lw_fieldcat-scrtext_l = 'Net Value'(005).
+lw_fieldcat-just = 'R'.
+APPEND lw_fieldcat TO lt_fieldcat.
+```
+
+### Navigation
+
+- BACK: Previous Screen
+- EXIT: SAP Main Menu
+- CANCEL: First Screen
+- NO custom interpretation

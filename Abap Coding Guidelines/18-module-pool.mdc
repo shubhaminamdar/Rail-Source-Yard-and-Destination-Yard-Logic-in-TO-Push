@@ -1,0 +1,140 @@
+---
+description: Module Pool and Dynpro Program Standards
+globs: ["*.prog.abap", "*.abap"]
+alwaysApply: false
+priority: 18
+---
+
+# Module Pool / Dynpro Programs
+
+## Programming Approach
+
+- **Use OOP:** Yes
+- **Use local classes:** Yes
+- **Use methods:** Yes
+
+## Modularization
+
+### Mandatory Includes
+
+- **TOP:** Global declarations
+- **I01:** PAI modules
+- **O01:** PBO modules
+- **F01:** Subroutines
+- **C01:** Class definition and implementation
+
+## Screen Design
+
+### No Abbreviations
+
+**Rule:** No abbreviations on screen fields or labels
+
+```abap
+" ✅ CORRECT
+" Company Code
+" Material Number
+" Storage Location
+
+" ❌ FORBIDDEN
+" Comp Code
+" Mat No
+" Stor Loc
+```
+
+## Frames
+
+### Multiple Frames Alignment
+
+- **Mandatory:** Yes
+- **Rule:** All frames must be aligned
+
+## Field Labels
+
+### Requirements
+
+- **No abbreviations:** Yes
+- **Provide descriptions:** Mandatory
+- **Standard fields must have descriptions:**
+  - Plant
+  - Storage Location
+  - Material Number
+  - Document Type
+  - Company Code
+- **Include in table control:** Yes
+
+## Table Control
+
+### Button Placement
+
+- **Correct:** Above table control, leftmost corner
+- **Forbidden:** Beside table control, below table control
+
+## Custom Buttons
+
+- **Meaningful text:** Mandatory
+- **Meaningful icons:** Mandatory
+
+## Screen Design Example
+
+```abap
+" Screen 0100 - Material Entry
+
+" Frame: Material Data
+" Fields:
+"   P_MATNR - Material Number (with description)
+"   P_MAKTX - Material Description
+"   P_MTART - Material Type (with description)
+
+" Frame: Plant Data
+" Fields:
+"   P_WERKS - Plant (with description)
+"   P_LGORT - Storage Location (with description)
+
+" Table Control: Material List
+" Buttons: Above table, leftmost corner
+"   - Add Material
+"   - Delete Material
+"   - Save
+```
+
+## PBO Module Pattern
+
+```abap
+MODULE pbo_0100 OUTPUT.
+  " Set screen fields
+  " Set field attributes
+  " Set table control
+ENDMODULE.
+```
+
+## PAI Module Pattern
+
+```abap
+MODULE pai_0100 INPUT.
+  CASE sy-ucomm.
+    WHEN 'BACK'.
+      LEAVE TO SCREEN 0.
+    WHEN 'SAVE'.
+      PERFORM f_save_data.
+    WHEN OTHERS.
+  ENDCASE.
+ENDMODULE.
+```
+
+## Field Validation
+
+```abap
+MODULE validate_matnr INPUT.
+  IF p_matnr IS INITIAL.
+    MESSAGE 'Material Number is required'(001) TYPE 'E'.
+  ENDIF.
+  
+  SELECT SINGLE matnr
+    FROM mara
+    INTO p_matnr
+    WHERE matnr = p_matnr.
+  IF sy-subrc <> 0.
+    MESSAGE 'Invalid Material Number'(002) TYPE 'E'.
+  ENDIF.
+ENDMODULE.
+```

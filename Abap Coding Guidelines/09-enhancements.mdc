@@ -1,0 +1,74 @@
+---
+description: Enhancement and Modification Rules
+globs: ["*.abap", "*.prog.abap", "*.clas.abap"]
+alwaysApply: false
+priority: 10
+---
+
+# Enhancements & Modifications
+
+## Enhancement Rules
+
+### Maximum 15 Lines
+- All enhancement code must not exceed 15 lines
+- Complex logic must be in Z function module or class
+
+### Forbidden in Enhancements
+- ❌ COMMIT WORK
+- ❌ EXIT statement
+- ❌ CHECK statement
+- ❌ Direct table updates
+
+### Pattern
+
+```abap
+" In enhancement point - call Z function module
+CALL FUNCTION 'Z_PROCESS_ENHANCEMENT'
+  EXPORTING
+    iv_param = lv_value
+  IMPORTING
+    ev_result = lv_result
+  EXCEPTIONS
+    error = 1
+    OTHERS = 2.
+IF sy-subrc <> 0.
+  " Handle error
+ENDIF.
+```
+
+## BADI Implementation
+
+### Naming Convention
+- Implementation class: `ZCL_IM_*` or `YCL_IM_*`
+- Example: `ZCL_IM_MATERIAL_CHECK`
+
+### Best Practices
+- Single purpose per BADI
+- Avoid complex logic - call Z function module
+- Error handling mandatory
+- Use TRY-CATCH
+- Document purpose and test scenarios
+
+### Performance
+- Avoid database calls when BADI called in loop
+- Cache data when appropriate
+- Use filter parameters efficiently
+
+## Standard Table Modifications
+
+### Forbidden
+- ❌ Direct INSERT/UPDATE/DELETE on standard tables
+- ❌ Physical DELETE on Z/Y tables
+
+### Required
+- ✅ Use BAPIs for standard tables
+- ✅ Use soft delete for Z/Y tables
+
+```abap
+" ✅ Soft delete pattern
+UPDATE ztable
+  SET deleted = 'X'
+      deletion_date = sy-datum
+      deletion_user = sy-uname
+  WHERE key = lv_key.
+```

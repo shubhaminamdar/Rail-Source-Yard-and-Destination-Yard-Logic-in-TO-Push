@@ -1,0 +1,86 @@
+---
+description: Exception Handling Rules for NetWeaver 7.31
+globs: ["*.abap", "*.prog.abap", "*.clas.abap"]
+alwaysApply: false
+priority: 6
+---
+
+# Exception Handling
+
+## NW 7.31 Compatible Pattern
+
+```abap
+" Declare exception object BEFORE TRY block
+DATA: lo_exception TYPE REF TO cx_root,
+      lv_error_text TYPE string.
+
+TRY.
+    " Code that may raise exception
+    CALL METHOD process_data.
+    
+  CATCH cx_root INTO lo_exception.
+    " Get text from exception
+    lv_error_text = lo_exception->get_text( ).
+    
+    " Display message (use DISPLAY LIKE for reports)
+    MESSAGE lv_error_text TYPE 'I' DISPLAY LIKE 'E'.
+ENDTRY.
+```
+
+## Forbidden Patterns
+
+```abap
+" ❌ FORBIDDEN - Inline CATCH (7.40+)
+TRY.
+  CATCH cx_root INTO DATA(lo_ex).
+ENDTRY.
+
+" ❌ FORBIDDEN - Direct object in MESSAGE
+TRY.
+  CATCH cx_root INTO lo_exception.
+    MESSAGE lo_exception TYPE 'E'.  " Invalid!
+ENDTRY.
+
+" ❌ FORBIDDEN - Method call in MESSAGE
+MESSAGE lo_exception->get_text() TYPE 'E'.  " Invalid!
+
+" ❌ FORBIDDEN - TYPE 'E' without 3-digit message number
+MESSAGE lv_error_text TYPE 'E'.  " Requires: MESSAGE E001(...) or use TYPE 'I' DISPLAY LIKE 'E'
+```
+
+## Message Types
+
+- **E** - Error (stops processing)
+- **W** - Warning (continues)
+- **I** - Information (requires acknowledgment)
+- **S** - Success (status bar only)
+
+## Reports: Use DISPLAY LIKE
+
+```abap
+" ✅ For reports - doesn't terminate
+MESSAGE 'Error occurred'(001) TYPE 'I' DISPLAY LIKE 'E'.
+
+" ❌ Terminates report
+MESSAGE 'Error occurred' TYPE 'E'.
+```
+
+## MESSAGE TYPE 'E' Requirements
+
+```abap
+" ❌ FORBIDDEN - TYPE 'E' requires 3-digit message number
+MESSAGE lv_error_text TYPE 'E'.  " Syntax error!
+
+" ✅ CORRECT - Use TYPE 'I' DISPLAY LIKE 'E' for dynamic text
+DATA: lv_error_text TYPE string.
+lv_error_text = lo_exception->get_text( ).
+MESSAGE lv_error_text TYPE 'I' DISPLAY LIKE 'E'.
+
+" ✅ CORRECT - Use message class with TYPE 'E'
+MESSAGE ID 'ZMSG' TYPE 'E' NUMBER '001' WITH lv_param.
+
+" ✅ CORRECT - Use text element with TYPE 'E'
+MESSAGE 'Error occurred'(001) TYPE 'E'.
+```
+
+**Rationale:** `MESSAGE ... TYPE 'E'` requires a 3-digit message number (e.g., `E001`). For dynamic error text from exceptions, use `TYPE 'I' DISPLAY LIKE 'E'` instead.

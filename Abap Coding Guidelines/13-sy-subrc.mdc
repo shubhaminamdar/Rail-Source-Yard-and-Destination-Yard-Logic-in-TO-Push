@@ -1,0 +1,164 @@
+---
+description: SY-SUBRC Check Requirements
+globs: ["*.abap", "*.prog.abap", "*.clas.abap"]
+alwaysApply: false
+priority: 13
+---
+
+# SY-SUBRC Checks
+
+## Mandatory After
+
+- READ TABLE
+- SELECT
+- CALL FUNCTION
+- AUTHORITY-CHECK
+- OPEN DATASET
+- CALL TRANSACTION
+- SUBMIT
+- CALL METHOD
+
+## Not Required After
+
+- APPEND
+- CLEAR
+- MOVE
+- ASSIGN
+- LOOP
+- WRITE
+
+## Pattern
+
+- **Check immediately:** Yes
+- **Rule:** Check SY-SUBRC immediately after statement
+
+## Examples
+
+### READ TABLE
+
+```abap
+READ TABLE lt_data INTO lw_data WITH KEY matnr = lv_matnr.
+IF sy-subrc = 0.
+  " Process found record
+ELSE.
+  " Handle not found
+ENDIF.
+```
+
+### SELECT
+
+```abap
+SELECT SINGLE matnr mtart
+  FROM mara
+  INTO lw_mara
+  WHERE matnr = lv_matnr.
+IF sy-subrc = 0.
+  " Process found record
+ELSE.
+  " Handle not found
+ENDIF.
+```
+
+### CALL FUNCTION
+
+```abap
+CALL FUNCTION 'Z_PROCESS_DATA'
+  EXPORTING
+    iv_param = lv_value
+  IMPORTING
+    ev_result = lv_result
+  EXCEPTIONS
+    error = 1
+    OTHERS = 2.
+IF sy-subrc <> 0.
+  " Handle error
+  CASE sy-subrc.
+    WHEN 1.
+      MESSAGE 'Error occurred'(001) TYPE 'E'.
+    WHEN OTHERS.
+      MESSAGE 'Unknown error'(002) TYPE 'E'.
+  ENDCASE.
+ENDIF.
+```
+
+### AUTHORITY-CHECK
+
+```abap
+AUTHORITY-CHECK OBJECT 'S_TCODE'
+                ID 'TCD' FIELD sy-tcode.
+IF sy-subrc IS NOT INITIAL.
+  MESSAGE w077(s#) WITH sy-tcode DISPLAY LIKE 'E'.
+  LEAVE PROGRAM.
+ENDIF.
+```
+
+### CALL METHOD
+
+```abap
+CALL METHOD lo_object->process_data
+  EXPORTING
+    iv_param = lv_value
+  IMPORTING
+    ev_result = lv_result.
+IF sy-subrc <> 0.
+  " Handle error
+ENDIF.
+```
+
+## Forbidden Patterns
+
+- ❌ Do not check SY-SUBRC multiple statements later
+- ❌ Do not assume SY-SUBRC = 0 without checking
+- ❌ Do not use SY-SUBRC from previous operation
+
+### Wrong Examples
+
+```abap
+" ❌ FORBIDDEN - Checking later
+READ TABLE lt_data INTO lw_data WITH KEY matnr = lv_matnr.
+lv_value = lw_data-value.
+IF sy-subrc = 0.  " Wrong! sy-subrc may have changed
+  " Process
+ENDIF.
+
+" ❌ FORBIDDEN - Assuming success
+SELECT SINGLE matnr FROM mara INTO lv_matnr WHERE matnr = lv_matnr.
+lv_result = lv_matnr.  " Wrong! No check if record exists
+
+" ❌ FORBIDDEN - Using previous SY-SUBRC
+READ TABLE lt_data1 INTO lw_data1 WITH KEY key = 'A'.
+READ TABLE lt_data2 INTO lw_data2 WITH KEY key = 'B'.
+IF sy-subrc = 0.  " Wrong! This checks second READ, not first
+  " Process
+ENDIF.
+```
+
+### Correct Examples
+
+```abap
+" ✅ CORRECT - Check immediately
+READ TABLE lt_data INTO lw_data WITH KEY matnr = lv_matnr.
+IF sy-subrc = 0.
+  lv_value = lw_data-value.
+  " Process
+ENDIF.
+
+" ✅ CORRECT - Check each operation
+SELECT SINGLE matnr FROM mara INTO lv_matnr WHERE matnr = lv_matnr.
+IF sy-subrc = 0.
+  lv_result = lv_matnr.
+ELSE.
+  " Handle not found
+ENDIF.
+
+" ✅ CORRECT - Check each separately
+READ TABLE lt_data1 INTO lw_data1 WITH KEY key = 'A'.
+IF sy-subrc = 0.
+  " Process first
+ENDIF.
+
+READ TABLE lt_data2 INTO lw_data2 WITH KEY key = 'B'.
+IF sy-subrc = 0.
+  " Process second
+ENDIF.
+```

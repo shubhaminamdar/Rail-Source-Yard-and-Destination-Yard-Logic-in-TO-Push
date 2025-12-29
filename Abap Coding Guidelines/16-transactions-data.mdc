@@ -1,0 +1,169 @@
+---
+description: Transactions and Data Safety Rules
+globs: ["*.abap", "*.prog.abap", "*.clas.abap"]
+alwaysApply: false
+priority: 16
+---
+
+# Transactions & Data Safety
+
+## BAPI Usage
+
+### Rules
+- **Rollback on error:** Yes
+- **Commit on success:** Yes
+- **Use instead of direct table update:** Yes
+
+### Pattern
+
+```abap
+DATA: lt_return TYPE TABLE OF bapiret2,
+      lw_return TYPE bapiret2.
+
+CALL FUNCTION 'BAPI_MATERIAL_SAVEDATA'
+  EXPORTING
+    headdata            = lw_headdata
+    clientdata          = lw_clientdata
+    clientdatax         = lw_clientdatax
+  TABLES
+    materialdescription = lt_maktx
+    return              = lt_return.
+
+" Check for errors
+READ TABLE lt_return INTO lw_return WITH KEY type = 'E'.
+IF sy-subrc = 0.
+  " Error occurred - rollback
+  CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+  
+  " Process error messages
+  LOOP AT lt_return INTO lw_return WHERE type = 'E'.
+    MESSAGE ID lw_return-id TYPE 'I' NUMBER lw_return-number
+      WITH lw_return-message_v1 lw_return-message_v2
+           lw_return-message_v3 lw_return-message_v4
+      DISPLAY LIKE 'E'.
+  ENDLOOP.
+ELSE.
+  " Success - commit
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+    EXPORTING
+      wait = 'X'.
+  
+  MESSAGE 'Data saved successfully'(001) TYPE 'S'.
+ENDIF.
+```
+
+## Locking
+
+### Mandatory For
+- UPDATE
+- DELETE
+- MODIFY
+
+### Locking Pattern
+
+```abap
+" Enqueue (lock)
+CALL FUNCTION 'ENQUEUE_EZMATERIAL'
+  EXPORTING
+    matnr = lv_matnr
+  EXCEPTIONS
+    foreign_lock = 1
+    system_failure = 2
+    OTHERS = 3.
+
+IF sy-subrc = 0.
+  " Perform update
+  UPDATE mara SET mtart = lv_mtart WHERE matnr = lv_matnr.
+  
+  " Dequeue (unlock)
+  CALL FUNCTION 'DEQUEUE_EZMATERIAL'
+    EXPORTING
+      matnr = lv_matnr.
+ELSE.
+  MESSAGE 'Record is locked by another user'(001) TYPE 'E'.
+ENDIF.
+```
+
+## Standard Tables
+
+### Forbidden
+- ❌ INSERT on standard SAP tables
+- ❌ UPDATE on standard SAP tables
+- ❌ DELETE on standard SAP tables
+
+### Rule
+**INSERT, UPDATE, DELETE on standard SAP tables is NOT ALLOWED**
+
+### Alternative
+**Use corresponding BAPI instead**
+
+### Examples
+
+```abap
+" ❌ FORBIDDEN - Direct update
+UPDATE mara SET mtart = lv_mtart WHERE matnr = lv_matnr.
+
+" ✅ CORRECT - Use BAPI
+CALL FUNCTION 'BAPI_MATERIAL_SAVEDATA'
+  EXPORTING
+    headdata = lw_headdata
+    clientdata = lw_clientdata.
+```
+
+## Custom Tables (Z/Y Tables)
+
+### Physical Delete Forbidden
+
+**Rule:** Do not physically delete records from Z or Y tables
+
+**Alternative:** Flag records as deleted using a deletion indicator field
+
+### Soft Delete Pattern
+
+```abap
+" ✅ CORRECT - Soft delete
+UPDATE ztable
+  SET deleted = 'X'
+      deletion_date = sy-datum
+      deletion_user = sy-uname
+  WHERE key = lv_key.
+
+IF sy-subrc = 0.
+  COMMIT WORK AND WAIT.
+ENDIF.
+
+" ❌ FORBIDDEN - Physical delete
+DELETE FROM ztable WHERE key = lv_key.
+```
+
+### Soft Delete Table Structure
+
+```abap
+" Recommended fields for soft delete
+ztable:
+  - deleted TYPE abap_bool        " Deletion flag
+  - deletion_date TYPE datum      " Deletion date
+  - deletion_user TYPE uname      " User who deleted
+  - deletion_time TYPE uzeit       " Deletion time (optional)
+```
+
+### Query with Soft Delete
+
+```abap
+" Always exclude deleted records
+SELECT matnr mtart
+  FROM ztable
+  INTO TABLE lt_data
+  WHERE deleted = space
+    AND matnr IN s_matnr.
+```
+
+## Transaction Safety Checklist
+
+- [ ] Use BAPIs for standard tables
+- [ ] Use locking for updates
+- [ ] Check BAPI return messages
+- [ ] Rollback on error
+- [ ] Commit on success
+- [ ] Use soft delete for Z/Y tables
+- [ ] Exclude deleted records in queries

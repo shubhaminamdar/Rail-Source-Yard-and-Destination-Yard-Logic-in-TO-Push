@@ -1,0 +1,230 @@
+---
+description: Reports and Program Structure Standards
+globs: ["*.prog.abap", "*.abap"]
+alwaysApply: false
+priority: 17
+---
+
+# Reports & Program Structure
+
+## Programming Approach
+
+- **Use OOP:** Yes - **MANDATORY**
+- **Use local classes:** Yes - **MANDATORY**
+- **Use methods:** Yes - **MANDATORY**
+- **Use FORMs/PERFORM:** ❌ **FORBIDDEN** (except for legacy maintenance)
+
+**Rationale:** All report logic MUST be implemented in local classes using methods. FORMs/PERFORM are only acceptable when maintaining existing legacy reports that cannot be refactored.
+
+## Modularization
+
+### Mandatory Includes
+
+- **TOP:** Global declarations (TYPES, DATA, CONSTANTS)
+- **C01:** Class definition and implementation - **MANDATORY**
+- **SEL (or S01):** Selection Screen definition - **RECOMMENDED** for better modularization
+- **I01:** PAI modules (Process After Input) - Optional
+- **O01:** PBO modules (Process Before Output) - Optional
+- **F01:** Subroutines/Forms - **FORBIDDEN** for new reports
+
+**Rationale:** Code must be modularized using OOP principles. All business logic goes into class methods. Selection screen in separate include improves maintainability and organization.
+
+### Include Structure
+
+```abap
+REPORT zmaterial_report.
+
+INCLUDE zmaterial_reporttop.  " Global declarations
+INCLUDE zmaterial_reportsel.  " Selection Screen - RECOMMENDED (immediately after TOP)
+INCLUDE zmaterial_reportc01.  " Classes - MANDATORY
+" F01 include NOT used - all logic in class methods
+INCLUDE zmaterial_reporti01.  " PAI modules (if needed)
+INCLUDE zmaterial_reporto01.  " PBO modules (if needed)
+```
+
+**Note:** Selection screen include (SEL or S01) must come immediately after TOP include, before C01. This ensures global types from TOP are available for parameter definitions. It keeps the main program clean and improves maintainability.
+
+## ALV Grid
+
+- **Use object-oriented:** Yes
+- **Exception:** Only when copying/changing standard SAP reports
+- **Rationale:** SAP ALV grid should be Object-Oriented
+
+## Old Reports Modification
+
+- **Follow OOP:** Yes
+- **Modularize with includes:** Yes
+
+## Complete Report Template (OOP Approach)
+
+```abap
+*&---------------------------------------------------------------------*
+*& Report  ZMATERIAL_REPORT
+*&---------------------------------------------------------------------*
+*& Purpose: Material Master Report
+*& Author: [Name]
+*& Date: [Date]
+*&---------------------------------------------------------------------*
+REPORT zmaterial_report.
+
+INCLUDE zmaterial_reporttop.  " Global declarations
+INCLUDE zmaterial_reportsel.  " Selection Screen - RECOMMENDED (immediately after TOP)
+INCLUDE zmaterial_reportc01.  " Classes - MANDATORY
+
+*----------------------------------------------------------------------*
+* Global Objects
+*----------------------------------------------------------------------*
+DATA: go_report TYPE REF TO lcl_report.
+
+*----------------------------------------------------------------------*
+* Initialization
+*----------------------------------------------------------------------*
+INITIALIZATION.
+  CREATE OBJECT go_report.
+  go_report->authorization_check( ).
+
+*----------------------------------------------------------------------*
+* At Selection Screen
+*----------------------------------------------------------------------*
+AT SELECTION-SCREEN ON p_bukrs.
+  CREATE OBJECT go_report.
+  go_report->validate_company_code( ).
+
+*----------------------------------------------------------------------*
+* Start of Selection
+*----------------------------------------------------------------------*
+START-OF-SELECTION.
+  CREATE OBJECT go_report.
+  go_report->get_data( ).
+  go_report->process_data( ).
+  go_report->display_alv( ).
+```
+
+## Include File Structure
+
+### TOP Include (Global Declarations)
+
+```abap
+*&---------------------------------------------------------------------*
+*& Include  ZMATERIAL_REPORTTOP
+*&---------------------------------------------------------------------*
+" Global types
+TYPES: BEGIN OF ty_output,
+         matnr TYPE matnr,
+         maktx TYPE maktx,
+         mtart TYPE mtart,
+       END OF ty_output.
+
+TYPES: tt_output TYPE TABLE OF ty_output.
+
+" Global data
+DATA: gt_output TYPE tt_output,
+      gw_output TYPE ty_output.
+
+" Global constants
+CONSTANTS: lc_max_rows TYPE i VALUE 1000.
+```
+
+### C01 Include (Classes) - MANDATORY
+
+```abap
+*&---------------------------------------------------------------------*
+*& Include  ZMATERIAL_REPORTC01
+*&---------------------------------------------------------------------*
+*& Main Report Class - All business logic goes here
+*&---------------------------------------------------------------------*
+
+CLASS lcl_report DEFINITION.
+  PUBLIC SECTION.
+    METHODS: authorization_check,
+             validate_company_code,
+             get_data,
+             process_data,
+             display_alv.
+  PRIVATE SECTION.
+    METHODS: set_column_properties.
+ENDCLASS.
+
+CLASS lcl_report IMPLEMENTATION.
+
+  METHOD authorization_check.
+    " Authorization validation logic
+  ENDMETHOD.
+
+  METHOD validate_company_code.
+    " Input validation logic
+  ENDMETHOD.
+
+  METHOD get_data.
+    " Data selection logic
+  ENDMETHOD.
+
+  METHOD process_data.
+    " Data processing logic
+  ENDMETHOD.
+
+  METHOD display_alv.
+    " ALV display logic
+    me->set_column_properties( ).
+  ENDMETHOD.
+
+  METHOD set_column_properties.
+    " Private helper method
+  ENDMETHOD.
+
+ENDCLASS.
+
+" Optional: Event handler class for ALV events
+CLASS lcl_event_handler DEFINITION.
+  PUBLIC SECTION.
+    METHODS: on_user_command FOR EVENT user_command
+      OF cl_salv_events_table IMPORTING e_ucomm.
+ENDCLASS.
+
+CLASS lcl_event_handler IMPLEMENTATION.
+  METHOD on_user_command.
+    " Event handling
+  ENDMETHOD.
+ENDCLASS.
+```
+
+### SEL Include (Selection Screen) - RECOMMENDED
+
+**✅ RECOMMENDED:** Use separate include for selection screen definition to improve modularization and maintainability.
+
+**Naming Convention:**
+- `Z_PROGRAM_NAMESEL` - "SEL" suffix (recommended)
+- `Z_PROGRAM_NAMES01` - "S01" suffix (alternative, allows S02, S03 for multiple screens)
+
+**Placement:** Immediately after TOP include, before C01 include. This ensures global types from TOP are available for parameter type definitions.
+
+**Example:**
+
+```abap
+*&---------------------------------------------------------------------*
+*& Include  ZMATERIAL_REPORTSEL
+*&---------------------------------------------------------------------*
+*& Selection Screen Definition
+*&---------------------------------------------------------------------*
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-001.
+PARAMETERS: p_bukrs TYPE bukrs OBLIGATORY.
+SELECT-OPTIONS: s_matnr FOR mara-matnr.
+SELECTION-SCREEN END OF BLOCK b1.
+```
+
+**Benefits:**
+- Cleaner main program file
+- Easier maintenance for complex selection screens
+- Better organization and modularization
+- Consistent with include-based structure
+
+**Note:** Selection screen can also be defined directly in the main program if it's simple. However, using an include is recommended for consistency and maintainability.
+
+### F01 Include - FORBIDDEN for New Reports
+
+**❌ DO NOT USE F01 include for new reports. All logic must be in class methods (C01).**
+
+F01 is only acceptable when:
+- Maintaining existing legacy reports that cannot be refactored
+- Copying/changing standard SAP reports that use FORMs

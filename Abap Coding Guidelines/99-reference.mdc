@@ -1,0 +1,477 @@
+---
+description: Quick Reference Guide and Code Templates
+globs: ["*.abap", "*.prog.abap", "*.clas.abap", "*.fugr.abap"]
+alwaysApply: false
+priority: 99
+---
+
+# Quick Reference & Templates
+
+## Common Patterns
+
+### Report Structure (OOP Approach - MANDATORY)
+
+```abap
+*&---------------------------------------------------------------------*
+*& Report  ZMATERIAL_REPORT
+*&---------------------------------------------------------------------*
+*& Purpose: Material Master Report
+*& Author: [Name]
+*& Date: [Date]
+*&---------------------------------------------------------------------*
+REPORT zmaterial_report.
+
+INCLUDE zmaterial_reporttop.  " Global declarations
+INCLUDE zmaterial_reportsel.  " Selection Screen - RECOMMENDED (immediately after TOP)
+INCLUDE zmaterial_reportc01.  " Classes - MANDATORY
+
+*----------------------------------------------------------------------*
+* Global Objects
+*----------------------------------------------------------------------*
+DATA: go_report TYPE REF TO lcl_report.
+
+INITIALIZATION.
+  CREATE OBJECT go_report.
+  go_report->authorization_check( ).
+
+AT SELECTION-SCREEN ON p_bukrs.
+  CREATE OBJECT go_report.
+  go_report->validate_company_code( ).
+
+START-OF-SELECTION.
+  CREATE OBJECT go_report.
+  go_report->get_data( ).
+  go_report->display_alv( ).
+```
+
+### Function Module Template
+
+```abap
+" Define table types in TOP include
+TYPES: BEGIN OF gty_material,
+         matnr TYPE matnr,
+         maktx TYPE maktx,
+       END OF gty_material.
+
+TYPES: gty_materials TYPE TABLE OF gty_material.
+
+FUNCTION z_material_get.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_MATNR) TYPE  MATNR
+*"  EXPORTING
+*"     VALUE(ES_MARA) TYPE  MARA
+*"  TABLES
+*"     IT_MATERIALS TYPE  GTY_MATERIALS
+*"  EXCEPTIONS
+*"      MATERIAL_NOT_FOUND
+*"      NO_AUTHORITY
+*"----------------------------------------------------------------------
+  DATA: lw_mara TYPE mara.
+
+  " Authorization check
+  AUTHORITY-CHECK OBJECT 'S_RFC'
+    ID 'RFC_TYPE' FIELD 'FUNC'
+    ID 'RFC_NAME' FIELD 'Z_MATERIAL_GET'
+    ID 'ACTVT' FIELD '16'.
+  IF sy-subrc <> 0.
+    RAISE no_authority.
+  ENDIF.
+
+  " Input validation
+  IF iv_matnr IS INITIAL.
+    RAISE material_not_found.
+  ENDIF.
+
+  " Get data
+  SELECT SINGLE *
+    FROM mara
+    INTO es_mara
+    WHERE matnr = iv_matnr.
+  
+  IF sy-subrc <> 0.
+    RAISE material_not_found.
+  ENDIF.
+
+ENDFUNCTION.
+```
+
+**Note:** Table parameters must use specific table types (e.g., `gty_materials`), not generic `TABLE` or `STANDARD TABLE`.
+
+### Background Job Pattern
+
+```abap
+DATA: lv_log_handle TYPE balloghndl,
+      lw_log TYPE bal_s_log,
+      lt_package TYPE TABLE OF gty_data,
+      lc_package_size TYPE i VALUE 1000.
+
+" Check execution mode
+IF sy-batch = abap_true.
+  " Background mode - use application log
+  lw_log-object = 'ZMATERIAL'.
+  lw_log-subobject = 'PROCESS'.
+  lw_log-extnumber = sy-datum.
+  
+  CALL FUNCTION 'BAL_LOG_CREATE'
+    EXPORTING
+      i_s_log = lw_log
+    IMPORTING
+      e_log_handle = lv_log_handle.
+ELSE.
+  " Foreground mode - can use messages
+  MESSAGE 'Processing started'(001) TYPE 'S'.
+ENDIF.
+
+" Process in packages
+LOOP AT gt_data INTO gw_data.
+  APPEND gw_data TO lt_package.
+  
+  IF lines( lt_package ) >= lc_package_size.
+    PERFORM f_process_package USING lt_package lv_log_handle.
+    COMMIT WORK AND WAIT.
+    CLEAR lt_package.
+  ENDIF.
+ENDLOOP.
+
+" Process remaining records
+IF lt_package IS NOT INITIAL.
+  PERFORM f_process_package USING lt_package lv_log_handle.
+  COMMIT WORK AND WAIT.
+ENDIF.
+
+" Save log
+IF sy-batch = abap_true.
+  CALL FUNCTION 'BAL_DB_SAVE'
+    EXPORTING
+      i_client = sy-mandt
+      i_save_all = 'X'.
+ENDIF.
+```
+
+### Object-Oriented ALV
+
+```abap
+" Main report class with ALV methods
+CLASS lcl_report DEFINITION.
+  PUBLIC SECTION.
+    METHODS: display_alv.
+  PRIVATE SECTION.
+    METHODS: build_fieldcat CHANGING ct_fieldcat TYPE lvc_t_fcat,
+             build_layout CHANGING cs_layout TYPE lvc_s_layo,
+             show_detail IMPORTING is_data TYPE ty_output.
+ENDCLASS.
+
+" Event handler class
+CLASS lcl_event_handler DEFINITION.
+  PUBLIC SECTION.
+    METHODS:
+      on_user_command FOR EVENT user_command
+        OF cl_gui_alv_grid
+        IMPORTING e_ucomm,
+      on_double_click FOR EVENT double_click
+        OF cl_gui_alv_grid
+        IMPORTING e_row e_column.
+  PRIVATE SECTION.
+    DATA: go_report TYPE REF TO lcl_report.
+ENDCLASS.
+
+CLASS lcl_event_handler IMPLEMENTATION.
+  METHOD on_user_command.
+    DATA: lo_report TYPE REF TO lcl_report.
+    CREATE OBJECT lo_report.
+    
+    CASE e_ucomm.
+      WHEN '&DETAIL'.
+        lo_report->show_detail( ).
+      WHEN OTHERS.
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD on_double_click.
+    DATA: lw_data TYPE ty_output,
+          lo_report TYPE REF TO lcl_report.
+    
+    READ TABLE gt_output INDEX e_row-index INTO lw_data.
+    IF sy-subrc = 0.
+      CREATE OBJECT lo_report.
+      lo_report->show_detail( is_data = lw_data ).
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+" ALV display method
+METHOD display_alv.
+  DATA: go_alv TYPE REF TO cl_gui_alv_grid,
+        go_container TYPE REF TO cl_gui_custom_container,
+        go_handler TYPE REF TO lcl_event_handler,
+        gt_fieldcat TYPE lvc_t_fcat,
+        gw_layout TYPE lvc_s_layo.
+
+  CREATE OBJECT go_container
+    EXPORTING
+      container_name = 'CONTAINER'.
+
+  CREATE OBJECT go_alv
+    EXPORTING
+      i_parent = go_container.
+
+  CREATE OBJECT go_handler.
+
+  SET HANDLER go_handler->on_user_command FOR go_alv.
+  SET HANDLER go_handler->on_double_click FOR go_alv.
+
+  me->build_fieldcat( CHANGING ct_fieldcat = gt_fieldcat ).
+  me->build_layout( CHANGING cs_layout = gw_layout ).
+
+  CALL METHOD go_alv->set_table_for_first_display
+    EXPORTING
+      is_layout       = gw_layout
+    CHANGING
+      it_outtab       = gt_output
+      it_fieldcatalog = gt_fieldcat.
+ENDMETHOD.
+```
+
+### BAPI Usage Pattern
+
+```abap
+DATA: lt_return TYPE TABLE OF bapiret2,
+      lw_return TYPE bapiret2.
+
+CALL FUNCTION 'BAPI_MATERIAL_SAVEDATA'
+  EXPORTING
+    headdata            = lw_headdata
+    clientdata          = lw_clientdata
+    clientdatax         = lw_clientdatax
+  TABLES
+    materialdescription = lt_maktx
+    return              = lt_return.
+
+" Check for errors
+READ TABLE lt_return INTO lw_return WITH KEY type = 'E'.
+IF sy-subrc = 0.
+  " Error occurred - rollback
+  CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+  
+  " Process error messages
+  LOOP AT lt_return INTO lw_return WHERE type = 'E'.
+    MESSAGE ID lw_return-id TYPE 'I' NUMBER lw_return-number
+      WITH lw_return-message_v1 lw_return-message_v2
+           lw_return-message_v3 lw_return-message_v4
+      DISPLAY LIKE 'E'.
+  ENDLOOP.
+ELSE.
+  " Success - commit
+  CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+    EXPORTING
+      wait = 'X'.
+  
+  MESSAGE 'Data saved successfully'(001) TYPE 'S'.
+ENDIF.
+```
+
+### Memory Management Pattern
+
+```abap
+" Export to memory
+"Export sales data to memory for later retrieval in transaction ZMM01
+EXPORT lt_sales TO MEMORY ID 'ZSALES_DATA'.
+
+" Import from memory
+"Import sales data exported from transaction ZMM01
+IMPORT lt_sales FROM MEMORY ID 'ZSALES_DATA'.
+
+" Always free memory after import
+FREE MEMORY ID 'ZSALES_DATA'.
+```
+
+### Performance Benchmarking
+
+```abap
+DATA: lv_start_time TYPE i,
+      lv_end_time TYPE i,
+      lv_duration TYPE i,
+      lc_max_duration TYPE i VALUE 3000000.  " 3 seconds in microseconds
+
+GET RUN TIME FIELD lv_start_time.
+
+" Critical code section
+PERFORM f_process_data.
+
+GET RUN TIME FIELD lv_end_time.
+lv_duration = lv_end_time - lv_start_time.
+
+" Log if exceeds threshold
+IF lv_duration > lc_max_duration.
+  " Log performance issue
+  WRITE: / 'Performance warning: Duration =', lv_duration, 'microseconds'.
+ENDIF.
+```
+
+## Transaction Codes Reference
+
+### Development
+- **SE38** - ABAP Editor
+- **SE80** - Object Navigator
+- **SE24** - Class Builder
+- **SE37** - Function Builder
+- **SE11** - ABAP Dictionary
+- **SE91** - Message Maintenance
+
+### Analysis & Debugging
+- **SAT/SE30** - Runtime Analysis
+- **ST05** - SQL Trace
+- **ST12** - Combined Trace
+- **ST22** - ABAP Runtime Errors
+- **/H** - Debugger
+
+### Quality & Testing
+- **SCI** - Code Inspector
+- **SLIN** - Extended Program Check
+- **SAUNIT** - ABAP Unit Test
+
+### Transport
+- **SE09/SE10** - Transport Organizer
+- **STMS** - Transport Management System
+
+## Standard Reference Programs
+
+- **ZPALLETE_DISPATCH** - ALV Toolbar Reference
+- **ZCHAUPLD** - File Upload Pattern
+- **YGGBS000** - Form Printing (Subroutine)
+- **RV65A01** - Sales Form Routine
+
+## Quick Syntax Reminders
+
+### Variable Declaration Block
+```abap
+DATA: lv_variable TYPE type,
+      lt_table TYPE TABLE OF type,
+      lw_structure TYPE type,
+      lo_object TYPE REF TO class,
+      lc_constant TYPE type VALUE 'value'.
+
+FIELD-SYMBOLS: <lfs_data> TYPE type.
+```
+
+### Constants
+```abap
+" ✅ CORRECT - Fixed literal values
+CONSTANTS: lc_max_rows TYPE i VALUE 1000.
+CONSTANTS: lc_company TYPE bukrs VALUE '1000'.
+CONSTANTS: lc_status TYPE char1 VALUE 'A'.
+
+" ❌ FORBIDDEN - System variables in constants
+CONSTANTS: lc_langu TYPE spras VALUE sy-langu.  " Wrong!
+CONSTANTS: lc_date TYPE datum VALUE sy-datum.   " Wrong!
+
+" ✅ CORRECT - Use system variables directly
+SELECT matnr FROM makt
+  WHERE spras = sy-langu.  " Use sy-langu directly
+```
+
+### Loop with Read Table
+```abap
+SORT lt_target BY key.
+
+LOOP AT lt_source INTO lw_source.
+  READ TABLE lt_target INTO lw_target
+    WITH KEY key = lw_source-key
+    BINARY SEARCH.
+  IF sy-subrc = 0.
+    " Process
+  ENDIF.
+ENDLOOP.
+```
+
+### Loop with Table Modification
+```abap
+" ✅ CORRECT - Use ASSIGNING for direct modification
+FIELD-SYMBOLS: <lfs_data> TYPE ty_data.
+
+LOOP AT lt_data ASSIGNING <lfs_data>.
+  <lfs_data>-field = lv_value.
+ENDLOOP.
+
+" ✅ ALTERNATIVE - Use INDEX with MODIFY if INTO needed
+LOOP AT lt_data INTO lw_data.
+  lw_data-field = lv_value.
+  MODIFY lt_data FROM lw_data INDEX sy-tabix.
+ENDLOOP.
+
+" ❌ FORBIDDEN - Inefficient MODIFY without INDEX
+LOOP AT lt_data INTO lw_data.
+  lw_data-field = lv_value.
+  MODIFY lt_data FROM lw_data.  " Searches for matching row
+ENDLOOP.
+```
+
+### FOR ALL ENTRIES
+```abap
+IF lt_source IS NOT INITIAL.
+  SELECT field1 field2
+    FROM table
+    INTO TABLE lt_target
+    FOR ALL ENTRIES IN lt_source
+    WHERE key = lt_source-key.
+ENDIF.
+```
+
+### OpenSQL WHERE Clause
+```abap
+" ❌ FORBIDDEN - IS NOT INITIAL not allowed in WHERE
+SELECT matnr FROM makt
+  WHERE matnr IS NOT INITIAL.
+
+" ✅ CORRECT - Use <> space for character fields
+SELECT matnr FROM makt
+  WHERE matnr <> space.
+
+" ✅ CORRECT - Use IS NOT NULL for database NULL
+SELECT matnr FROM makt
+  WHERE matnr IS NOT NULL.
+```
+
+### Exception Handling
+```abap
+DATA: lo_exception TYPE REF TO cx_root,
+      lv_error_text TYPE string.
+
+TRY.
+    " Code
+  CATCH cx_root INTO lo_exception.
+    lv_error_text = lo_exception->get_text( ).
+    MESSAGE lv_error_text TYPE 'I' DISPLAY LIKE 'E'.
+ENDTRY.
+```
+
+### MESSAGE Statement
+```abap
+" ❌ FORBIDDEN - TYPE 'E' requires 3-digit number
+MESSAGE lv_text TYPE 'E'.  " Syntax error!
+
+" ✅ CORRECT - Use TYPE 'I' DISPLAY LIKE 'E' for dynamic text
+MESSAGE lv_error_text TYPE 'I' DISPLAY LIKE 'E'.
+
+" ✅ CORRECT - Use message class with TYPE 'E'
+MESSAGE ID 'ZMSG' TYPE 'E' NUMBER '001' WITH lv_param.
+
+" ✅ CORRECT - Use text element with TYPE 'E'
+MESSAGE 'Error occurred'(001) TYPE 'E'.
+```
+
+## Checklist Before Transport
+
+- [ ] No 7.40+ syntax
+- [ ] All variables declared upfront
+- [ ] SY-SUBRC checked after operations
+- [ ] Authorization checks present
+- [ ] Text elements used (no hard-coded text)
+- [ ] Exception handling implemented
+- [ ] No SELECT * or nested loops
+- [ ] Code Inspector clean
+- [ ] Extended Check clean
+- [ ] Breakpoints removed
+- [ ] Documentation complete

@@ -1,0 +1,63 @@
+---
+description: Testing and Quality Assurance Rules
+globs: ["*.abap", "*.prog.abap", "*.clas.abap"]
+alwaysApply: false
+priority: 9
+---
+
+# Testing & Quality
+
+## Quality Gates
+
+### Before Transport Checklist
+
+- [ ] Code Inspector (SCI): 0 errors, 0 warnings
+- [ ] Extended Check (SLIN): 0 errors, 0 warnings
+- [ ] All breakpoints removed
+- [ ] All dead code removed
+- [ ] No 7.40+ syntax
+- [ ] Authorization checks present
+- [ ] Exception handling implemented
+- [ ] Documentation complete
+- [ ] SY-SUBRC checks after operations
+- [ ] Text elements used (no hard-coded text)
+
+## Performance Verification
+
+- [ ] SAT/SE30: Runtime analysis
+- [ ] ST05: SQL trace (no full table scans)
+- [ ] Database time < 50% of total
+- [ ] Response time < 3 seconds (online)
+
+## ABAP Unit
+
+```abap
+CLASS ltc_test DEFINITION FOR TESTING
+  RISK LEVEL HARMLESS
+  DURATION SHORT.
+
+  PRIVATE SECTION.
+    DATA: mo_cut TYPE REF TO zcl_material_processor.
+    
+    METHODS: setup,
+             test_process_material FOR TESTING.
+ENDCLASS.
+
+CLASS ltc_test IMPLEMENTATION.
+  METHOD setup.
+    CREATE OBJECT mo_cut
+      EXPORTING
+        iv_plant = '1000'.
+  ENDMETHOD.
+
+  METHOD test_process_material.
+    DATA: lv_result TYPE abap_bool.
+    
+    lv_result = mo_cut->process_material( iv_matnr = 'TEST123' ).
+    
+    cl_abap_unit_assert=>assert_equals(
+      act = lv_result
+      exp = abap_true ).
+  ENDMETHOD.
+ENDCLASS.
+```
