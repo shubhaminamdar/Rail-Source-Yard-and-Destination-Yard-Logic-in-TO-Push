@@ -1,0 +1,66 @@
+# Changes Made to FM Z_SCM_MULTIMODE_OB_GETDET
+
+## Change Summary
+**Requirement**: Instead of using `gw_vttk-tdlnr` for `gw_order_header_data-vendor_code`, use `gw_vttk_t1-tdlnr` (from rail shipment processing via `gt_vttk_t1` table).
+
+**Location**: Header data processing section (around line 600-601)
+
+---
+
+## Modified Code Section
+
+### BEFORE (Original Code):
+```abap
+    gw_order_header_data-shipment_end_date = gw_vttk-daten.
+    gw_order_header_data-shipment_end_time = gw_vttk-uaten. CALL
+    FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT' EXPORTING input =
+    gw_vttk-tdlnr IMPORTING output = lw_tdlnr.
+    gw_order_header_data-vendor_code = lw_tdlnr .
+```
+
+### AFTER (Modified Code):
+```abap
+    gw_order_header_data-shipment_end_date = gw_vttk-daten.
+    gw_order_header_data-shipment_end_time = gw_vttk-uaten.
+    
+    ">>> CHANGE START: Use gw_vttk_t1-tdlnr from rail shipment if available
+    CLEAR: gw_vttk_t1.
+    READ TABLE gt_vttk_t1 INTO gw_vttk_t1 WITH KEY tknum = gw_vttk-tknum BINARY SEARCH.
+    IF sy-subrc = 0 AND gw_vttk_t1-tdlnr IS NOT INITIAL.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+        EXPORTING
+          input  = gw_vttk_t1-tdlnr
+        IMPORTING
+          output = lw_tdlnr.
+    ELSE.
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+        EXPORTING
+          input  = gw_vttk-tdlnr
+        IMPORTING
+          output = lw_tdlnr.
+    ENDIF.
+    ">>> CHANGE END
+    
+    gw_order_header_data-vendor_code = lw_tdlnr .
+```
+
+---
+
+## Explanation of Changes
+
+1. **Table Read Added**: The code now reads from `gt_vttk_t1` table using `gw_vttk-tknum` as the key to get the rail shipment data.
+
+2. **Conditional Logic**: Checks if the read is successful (`sy-subrc = 0`) and if `gw_vttk_t1-tdlnr` is not initial.
+
+3. **Priority**: 
+   - **First**: Uses `gw_vttk_t1-tdlnr` (from `gt_vttk_t1` table which contains rail shipment data) when available
+   - **Fallback**: Uses `gw_vttk-tdlnr` (original shipment) when rail shipment data is not found or tdlnr is initial
+
+4. **Context**: The `gt_vttk_t1` table is populated earlier in the code (around line 122-129) and contains shipment data filtered for rail shipments. This table is sorted by `tknum` (line 757), allowing binary search.
+
+---
+
+## Change Label
+**Change Request**: FS-mm_vendor_chnge.md  
+**Date**: Current  
+**Description**: Modified vendor_code assignment to use rail shipment vendor (gw_vttk_t1-tdlnr from gt_vttk_t1 table) instead of original shipment vendor (gw_vttk-tdlnr)
